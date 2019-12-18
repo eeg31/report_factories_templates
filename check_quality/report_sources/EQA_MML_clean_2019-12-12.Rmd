@@ -1,0 +1,2940 @@
+---
+title: "Master line list - Quality check"
+author: 'B. Sudre and E. Glennon for the analytic cell EOC Goma'
+date: "`r format(Sys.time(), '%A %d %B %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    css: !expr here::here('css', 'style.css')
+    highlight: zenburn
+    number_sections: yes
+    theme: spacelab
+    toc: yes
+    toc_collapse: no
+    toc_depth: 2
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+    
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      collapse = FALSE,
+                      fig.width = 8,
+                      fig.height = 6,
+                      dpi = 150,
+                      warning = FALSE,
+                      message = TRUE)
+```
+
+<br>
+
+**Maintainer:** 
+
+**Code contributors:** Thibaut Jombart, Chris Jarvis, Bertrand Sudre (bertrand.sudre@ecdc.europa.eu), Emma Glennon
+
+**Data contributors:** Analytic cell EOC Goma
+
+**Version:** 1.0.0 (only required for routine reports)
+
+**Reviewed by:** To BE DEFINED (Aminata?)
+
+<!--**Notice**: this is a **stable, routine report**. **Do not touch it unless it is
+broken.** To make a contribution, carefully read the
+[README](../../../../../README.html) file.-->
+
+
+
+<!-- ======================================================= -->
+# Outline {.tabset .tabset-fade .tabset-pills}
+
+The current report  produce a systematic quality check for the clean version of  "Master line list". The qualiy control is already insured by a set of procedures and quality  control steps (googlesheet formula, post-processing script). 
+This ad-hoc script proposes an additonal quality check on the "CLEAN" version intending to identify specific errors to be communicated back to the data manager and the analyst of the analytical cell in Goma for correction.
+
+## Objectives
+
+Provide a post processing quality check of the "master line list" CLEAN.
+
+
+## Data used
+
+master_linelist_clean_YYYY-MM-DD
+
+## Method
+
+The data preparation involves the following steps, detailed in the following tabs:
+
+* **Load scripts**: loads libraries and useful scripts used in the analyses; all
+  `.R` files contained in `scripts` at the root of the factory are automatically
+  loaded
+
+* **Load data**: imports datasets, and may contain some *ad hoc* changes to the
+data such as specific data cleaning (not used in other reports), new variables
+used in the analyses, etc.
+
+* **Clean data**: this section contains *ad hoc* data cleaning, i.e. which is
+  not used in other reports (otherwise cleaning should be done in a dedicated
+  report); this section is also used to create new variables used in the
+  analyses
+
+
+<!-- ======================================================= -->
+### Load scripts
+
+These scripts will load:
+
+* all local scripts, stored as `.R` filesinside `/scripts/`
+* all global scripts, i.e. stored outside the factory in `../scripts/`
+* the path to the cleaned VHF data stored as `x`
+
+```{r read_scripts}
+
+## read scripts
+path_to_scripts <- here::here("scripts")
+scripts_files <- dir(path_to_scripts, pattern = ".R$",
+                     full.names = TRUE)
+for (file in scripts_files) source(file, local = TRUE)
+
+ggthemr("grape")
+```
+
+
+<!-- ======================================================= -->
+### Load data
+
+We extract the completion date from the file name:
+
+```{r load_data}
+
+## load the data
+ current_clean_data
+ x <- rio::import(current_clean_data)
+ x
+
+## extract database date from the file name
+ file_name <- gsub("^[^.]+/", "", current_clean_data)
+ database_date <- file_name %>%
+   guess_dates()
+ database_date
+
+attach(x)
+# Derived a datatable 
+library(data.table)
+x_dt <- as.data.table(x)
+# Create a dataframe with the list of variable to store varaible characteristics
+var_des <- as.data.frame(colnames(x))
+colnames(var_des)[1] <-  "var"
+var_des$mod <- "."
+var_des$na <- "."
+var_des$per <- "."
+var_des$min <- "."
+var_des$max <- "."
+var_des$com <- "."
+
+```
+
+### Clean data
+
+Systematic check  of all the variables of the "master line list" CLEAN with an emphasis on data format, missing values %, cross tabulations and coherence test with numerous co-variates to detect any potential entry error.
+
+## Result summary
+
+For each variable, a comment is added if a quality check issue has been discovered.
+An update table variable description and comment is provided (see exported xls file).
+
+
+
+
+<!-- ======================================================= -->
+
+# "Master line list CLEAN" quality control {.tabset .tabset-fade .tabset-pills}
+
+The quality assessment is done for each variable according to the following categories: demographic and patient information, health facility and location information, behaviour and risk factor information, contacts, important dates, outcomes, comparisons across databases, and other.
+
+## Demographic and general patient information
+
+### Variable: mllid 
+Var. def. : master line list unique identifier. Variable entered manually in the data entry sheet.
+```{r master ID}
+#check first and last values (visually)
+str(mllid)
+mllid[1:40]
+mllid[(dim(x)[1]-40):dim(x)[1]]
+
+var_des$mod[which(var_des$var =="mllid")]  <- mode(mllid)
+var_des$na[which(var_des$var =="mllid")]  <- sum(is.na(mllid))
+var_des$per[which(var_des$var =="mllid")] <- round(sum(is.na(mllid))*100/length(mllid),1)
+
+#ensure all values are unique
+all_unique <- length(unique(mllid)) == length(mllid)
+if(!all_unique) {
+  repeated <- sapply(mllid, function(id) length(which(mllid==id))>1)
+  comment <- paste("some unique identifiers repeated: ", paste(mllid[repeated], collapse=", "), sep="")
+} else comment <- ""
+
+#ensure all values are properly formatted
+starts <- substr(mllid, start=1, stop=3)
+if(any(starts != 'evd', na.rm=T) | any(is.na(starts))) {
+  new_comment <- paste("some unique identifiers improperly formatted: ", paste(mllid[which(starts != 'evd' | is.na(starts))], collapse=', '), sep="")
+  comment <- paste(comment, new_comment, sep=' ')
+}
+
+ends <- suppressWarnings(as.numeric(substr(mllid, start=4, stop=7)))
+if(any(is.na(ends))) {
+  new_comment <- paste("some unique identifiers improperly formatted: ", paste(mllid[which(is.na(ends))], collapse=', '), sep="")
+  comment <- paste(comment, new_comment, sep=' ')
+}
+var_des$min[which(var_des$var =="mllid")] <- mllid[which(ends==min(ends, na.rm=T))]
+var_des$max[which(var_des$var =="mllid")] <- mllid[which(ends==max(ends, na.rm=T))]
+
+missing <- !(1:max(ends, na.rm=T) %in% ends)
+if(any(missing)){
+  new_comment <- paste("some unique identifiers missing: evd", paste((1:max(ends, na.rm=T))[missing], collapse=", "), sep="")
+  comment <- paste(comment, new_comment, sep=' ')
+}
+var_des$com[which(var_des$var =="mllid")] <- comment
+```
+
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: age 
+Var. def. : age of the EVD patient [derived variable R script]
+
+```{r age}
+mode(age)
+var_des$mod[which(var_des$var =="age")]  <- mode(age)
+var_des$na[which(var_des$var =="age")]  <- sum(is.na(age))
+print(paste("Percentage missing ", round(sum(is.na(age))*100/length(age),1), "%",sep=""))
+var_des$per[which(var_des$var =="age")] <- round(sum(is.na(age))*100/length(age),1)
+var_des$min[which(var_des$var =="age")] <- min(age, na.rm = T)
+var_des$max[which(var_des$var =="age")] <- max(age, na.rm = T)
+
+#check that ages align across databases
+to_check <- is.na(age) | age==0
+if(any(!is.na(age_cnc[to_check])) | any(!is.na(age_vhf[to_check]))) {
+  cnc_ages <- !is.na(age_cnc) & age_cnc != 0
+  vhf_ages <- !is.na(age_vhf) & age_vhf != 0
+
+  if(any(cnc_ages) | any(vhf_ages)) comment <- paste("some ages do not align or are equal to zero: ", 
+                                                     paste(unique(mllid[to_check & (cnc_ages | vhf_ages)]), collapse=', '), sep='')
+
+  DT::datatable(x[which(to_check & (cnc_ages | vhf_ages)), c("mllid", "age","age_cnc","age_vhf")])
+} else {
+  comment <- 'all ages align across databases'
+}
+
+var_des$com[which(var_des$var =="age")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: age_class
+Var. def. : automatic age class
+
+```{r age_class}
+mode(age_class)
+print(paste("Levels ", levels(age_class),sep=""))
+var_des$mod[which(var_des$var =="age_class")]  <- mode(age_class)
+var_des$na[which(var_des$var =="age_class")]  <- sum(age_class=='unknown')
+print(paste("Percentage missing ", round(sum(age_class=='unknown')*100/length(age_class),1), "%",sep=""))
+var_des$per[which(var_des$var =="age_class")] <- round(sum(is.na(age_class))*100/length(age_class),1)
+var_des$min[which(var_des$var =="age_class")] <- levels(age_class)[1]
+var_des$max[which(var_des$var =="age_class")] <- levels(age_class)[length(levels(age_class))-1]
+
+table(age_class)
+to_check <- age_class=='unknown'
+if(any(!is.na(age_cnc[to_check])) | any(!is.na(age_vhf[to_check]))){
+  cnc_ages <- !is.na(age_cnc)
+  vhf_ages <- !is.na(age_vhf)
+
+  if(any(cnc_ages) | any(vhf_ages)) comment <- paste("some age classes are unknown but present in other databases: ", 
+                                                     paste(unique(mllid[to_check & (cnc_ages | vhf_ages)]), collapse=', '), sep='')
+
+  DT::datatable(x[which(to_check & (cnc_ages | vhf_ages)), c("mllid", "age_class","age_cnc","age_vhf")])
+} else {
+  comment <- 'all age classes align across databases'
+}
+
+var_des$com[which(var_des$var =="age_class")] <- comment
+```
+
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: age_class_plot
+Var. def. : duplicate of age_class
+```{r age_class_plot}
+mode(age_class_plot)
+var_des$mod[which(var_des$var =="age_class_plot")]  <- mode(age_class_plot)
+var_des$na[which(var_des$var =="age_class_plot")]  <- sum(is.na(age_class_plot) | age_class_plot=='unknown')
+print(paste("Percentage missing ", round(sum(is.na(age_class_plot) | age_class_plot=='unknown')*100/length(age_class_plot),1), "%",sep=""))
+var_des$per[which(var_des$var =="age_class_plot")] <- round(sum(is.na(age_class_plot) | age_class_plot=='unknown')*100/length(firstname),1)
+
+if(all(age_class_plot==age_class)) {
+  comment <- "all identical to age_class"
+} else {
+  differences <- which(age_class_plot!=age_class)
+  comment <- paste(length(differences), "not identical to age class: check mllids ", paste(mllid[differences], collapse=', '), sep='')
+}
+
+var_des$com[which(var_des$var =="age_class_plot")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: age_cnc
+Var. def. : age as reported in the coordination meeting
+```{r age_cnc}
+mode(age_cnc)
+var_des$mod[which(var_des$var =="age_cnc")]  <- mode(age_cnc)
+comment <- "age_cnc reported as character when should be numeric [conversion code: age_cnc_adj <- as.numeric(sapply(age_cnc, function(i) gsub('_', '.', x=i)))]; "
+
+#create numeric version of age_cnc for obtaining min/max
+age_cnc_adj <- as.numeric(sapply(age_cnc, function(i) gsub('_', '.', x=i)))
+
+var_des$na[which(var_des$var =="age_cnc")]  <- sum(is.na(age_cnc))
+print(paste("Percentage_cnc missing ", round(sum(is.na(age_cnc))*100/length(age_cnc),1), "%",sep=""))
+var_des$per[which(var_des$var =="age_cnc")] <- round(sum(is.na(age_cnc))*100/length(age_cnc),1)
+var_des$min[which(var_des$var =="age_cnc")] <- min(age_cnc_adj, na.rm=TRUE)
+var_des$max[which(var_des$var =="age_cnc")] <- max(age_cnc_adj, na.rm=TRUE)
+
+#DT::datatable(x[which(x$age_cnc == "0"), c("mllid", "age","age_cnc","age_vhf")]) 
+DT::datatable(x[is.na(x$age_cnc), c("mllid", "age","age_cnc","age_vhf")]) 
+
+comment <- paste(comment, round(sum(is.na(age_cnc))*100/length(age_cnc),1), "% missing", sep="")
+var_des$com[which(var_des$var =="age_cnc")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: age_vhf 
+Var. def. : age_vhf of the EVD patient 
+```{r age_vhf}
+mode(age_vhf)
+var_des$mod[which(var_des$var =="age_vhf")]  <- mode(age_vhf)
+var_des$na[which(var_des$var =="age_vhf")]  <- sum(is.na(age_vhf))
+print(paste("Percentage_vhf missing ", round(sum(is.na(age_vhf))*100/length(age_vhf),1), "%",sep=""))
+var_des$per[which(var_des$var =="age_vhf")] <- round(sum(is.na(age_vhf))*100/length(age_vhf),1)
+var_des$min[which(var_des$var =="age_vhf")] <- min(age_vhf, na.rm=TRUE)
+var_des$max[which(var_des$var =="age_vhf")] <- max(age_vhf, na.rm=TRUE)
+
+#DT::datatable(x[which(x$age_vhf == 0), c("mllid", "age","age_cnc","age_vhf")]) 
+#DT::datatable(x[is.na(x$age_vhf), c("mllid", "age","age_cnc","age_vhf")]) 
+
+comment <- paste(comment, round(sum(is.na(age_vhf))*100/length(age_vhf),1), "% missing", sep="")
+var_des$com[which(var_des$var =="age_vhf")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: surname
+Var. def. : surname of EVD patient
+```{r surname}
+mode(surname)
+var_des$mod[which(var_des$var =="surname")]  <- mode(surname)
+var_des$na[which(var_des$var =="surname")]  <- sum(is.na(surname))
+print(paste("Percentage missing ", round(sum(is.na(surname))*100/length(surname),1), "%",sep=""))
+var_des$per[which(var_des$var =="surname")] <- round(sum(is.na(surname))*100/length(surname),1)
+
+DT::datatable(x[which(is.na(x$surname)), c("mllid", "surname","firstname","vhf_code")])
+comment <- paste(round(sum(is.na(surname))*100/length(surname),1), "% missing surname but have VHF code: ",
+                 paste(vhf_code[which(is.na(x$surname) & !is.na(x$vhf_code))], collapse=', '), sep="")
+ comment <- paste(comment, '; ', round(sum(is.na(x$surname) & !is.na(x$vhf_code))*100/length(surname),1), "% missing both surname and VHF code", sep="")
+                
+var_des$com[which(var_des$var =="surname")] <- comment
+```
+
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: firstname
+Var. def. : first name of EVD patient
+```{r firstname}
+mode(firstname)
+var_des$mod[which(var_des$var =="firstname")]  <- mode(firstname)
+var_des$na[which(var_des$var =="firstname")]  <- sum(is.na(firstname))
+print(paste("Percentage missing ", round(sum(is.na(firstname))*100/length(firstname),1), "%",sep=""))
+var_des$per[which(var_des$var =="firstname")] <- round(sum(is.na(firstname))*100/length(firstname),1)
+
+comment <- paste(round(sum(is.na(x$surname))*100/length(firstname),1), "% missing first name", sep="")
+var_des$com[which(var_des$var =="firstname")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: sex
+Var. def. : sex of the EVD patient
+```{r sex}
+mode(sex)
+var_des$mod[which(var_des$var =="sex")]  <- mode(sex)
+var_des$na[which(var_des$var =="sex")]  <- sum(is.na(sex) | sex=="unknown")
+print(paste("Percentage missing ", round(sum(is.na(sex) | sex=="unknown")*100/length(sex),1), "%",sep=""))
+var_des$per[which(var_des$var =="sex")] <- round(sum(is.na(sex) | sex=="unknown")*100/length(firstname),1)
+table(sex, exclude= NULL)
+
+DT::datatable(x[which(x$sex=="unknown" | is.na(x$sex)), c("mllid", "sex", "gender", "surname","firstname","vhf_code")])
+temp <- as.character(table(sex, exclude= NULL)[3])
+
+comment <- paste(round(sum(is.na(sex) | sex=="unknown")*100/length(firstname),1), "% missing sex", sep="")
+var_des$com[which(var_des$var =="sex")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: gender
+Var. def. : 
+```{r gender}
+mode(gender)
+var_des$mod[which(var_des$var =="gender")]  <- mode(gender)
+var_des$na[which(var_des$var =="gender")]  <- sum(is.na(gender) | gender=='unknown')
+print(paste("Percentage missing ", round(sum(is.na(gender) | gender=='unknown')*100/length(gender),1), "%",sep=""))
+var_des$per[which(var_des$var =="gender")] <- round(sum(is.na(gender) | gender=='unknown')*100/length(firstname),1)
+
+table(gender,sex, exclude= NULL)
+
+comment <- paste("Gender unknown: ", sum(gender=='unknown'), sep="" )
+var_des$com[which(var_des$var =="gender")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+## Health facility and location information
+
+
+### Variable: province
+Var. def. : DRC province where the case has been reported  [derived variable R script]
+```{r province}
+mode(province)
+var_des$mod[which(var_des$var =="province")]  <- mode(province)
+table(province, exclude=NULL) 
+var_des$na[which(var_des$var =="province")]  <- sum(is.na(province))
+print(paste("Percentage missing= ", round(sum(is.na(province))*100/length(province),1), "%",sep=""))
+var_des$per[which(var_des$var =="province")]  <- round(sum(is.na(province))*100/length(province),1)
+
+comment <- "No missing data"
+var_des$com[which(var_des$var =="province")] <- comment
+```
+
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: sous_coordination
+Var. def. : Sous-coordination where the case has been reported  [derived variable R script]
+```{r sous_coordination}
+mode(sous_coordination)
+var_des$mod[which(var_des$var =="sous_coordination")]  <- mode(sous_coordination)
+table(sous_coordination, exclude=NULL) 
+var_des$na[which(var_des$var =="sous_coordination")]  <- sum(is.na(sous_coordination))
+print(paste("Percentage missing= ", round(sum(is.na(sous_coordination))*100/length(sous_coordination),1), "%",sep=""))
+var_des$per[which(var_des$var =="sous_coordination")]  <- round(sum(is.na(sous_coordination))*100/length(sous_coordination),1)
+
+by_sous <- table(province, sous_coordination, exclude=NULL)
+by_sous
+provinces_per_sous <- apply(by_sous, 2, function(i) sum(i>0))
+if(any(provinces_per_sous>1)) {
+  comment <- paste("Some sous-coordinations correspond to multiple provinces: ", paste(names(provinces_per_sous)[which(provinces_per_sous>1)], collapse=', '), "; ", sep='')
+} else comment <- ''
+
+if(any(is.na(sous_coordination))) {
+  comment <- paste(comment, sum(is.na(sous_coordination)), ' NA values', sep="")
+} else {
+  comment <- paste(comment, "no missing data", sep="")
+}
+
+var_des$com[which(var_des$var =="sous_coordination")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: zone_de_sante
+Var. def. : zone_de_sante where the case has been reported  [derived variable R script]
+```{r zone_de_sante}
+
+mode(zone_de_sante)
+var_des$mod[which(var_des$var =="zone_de_sante")]  <- mode(zone_de_sante)
+table(zone_de_sante, exclude=NULL) 
+var_des$na[which(var_des$var =="zone_de_sante")]  <- sum(is.na(zone_de_sante))
+print(paste("Percentage missing= ", round(sum(is.na(zone_de_sante))*100/length(zone_de_sante),1), "%",sep=""))
+var_des$per[which(var_des$var =="zone_de_sante")]  <- round(sum(is.na(zone_de_sante))*100/length(zone_de_sante),1)
+
+by_zone <- table(province, zone_de_sante, exclude=NULL)
+by_zone
+provinces_per_zone <- apply(by_zone, 2, function(i) sum(i>0))
+if(any(provinces_per_zone>1)) {
+  comment <- paste("Some zones de sante correspond to multiple provinces: ", paste(names(provinces_per_zone)[which(provinces_per_zone>1)], collapse=', '), "; ", sep='')
+} else comment <- ''
+
+table(zone_de_sante,sous_coordination, exclude=NULL)
+by_zone <- table(sous_coordination, zone_de_sante, exclude=NULL)
+by_zone
+sous_per_zone <- apply(by_zone, 2, function(i) sum(i>0))
+if(any(sous_per_zone>1)) {
+  comment <- paste(comment, "some zones de sante correspond to multiple sous-coordinations: ", paste(names(sous_per_zone)[which(sous_per_zone>1)], collapse=', '), "; ", sep='')
+} 
+
+if(any(is.na(zone_de_sante))) {
+  comment <- paste(comment, sum(is.na(zone_de_sante)), ' NA values', sep="")
+} else {
+  comment <- paste(comment, "no missing data", sep="")
+}
+
+var_des$com[which(var_des$var =="zone_de_sante")] <- comment
+```
+
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: onsetdiff
+Var. def. : Health zone of the start of the symptoms. Can be different of the reporting.
+```{r onsetdiff}
+mode(onsetdiff)
+var_des$mod[which(var_des$var =="onsetdiff")]  <- mode(onsetdiff)
+var_des$na[which(var_des$var =="onsetdiff")]  <- sum(is.na(onsetdiff))
+print(paste("Percentage missing: ", round(sum(is.na(onsetdiff))*100/length(onsetdiff),1), "%",sep=""))
+var_des$per[which(var_des$var =="onsetdiff")] <- round(sum(is.na(onsetdiff))*100/length(onsetdiff),1)
+
+unique(onsetdiff, exclude= NULL)
+
+DT::datatable(x[which(!is.na(onsetdiff)),  c("mllid","onsetdiff", "zs_cnc" , "zs_vhf" , "zs_calc" , "province" , "sous_coordination" , "zone_de_sante" , "aire_de_sante")]) 
+          
+comment <- paste("? can be used a cross check. Not clear the inforamation recorded there. Mix of name and date ", sep="")
+var_des$com[which(var_des$var =="onsetdiff")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: aire_de_sante
+Var. def. : aire_de_sante where the case has been reported  [derived variable R script]
+
+```{r aire_de_sante}
+table(aire_de_sante, exclude=NULL) 
+var_des$mod[which(var_des$var =="aire_de_sante")]  <- mode(aire_de_sante)
+var_des$na[which(var_des$var =="aire_de_sante")]  <- sum(is.na(aire_de_sante) | aire_de_sante=='unknown')
+print(paste("Percentage missing= ", round(sum(is.na(aire_de_sante) | aire_de_sante=='unknown')*100/length(aire_de_sante),2), "%",sep=""))
+var_des$per[which(var_des$var =="aire_de_sante")]  <- round(sum(is.na(aire_de_sante))*100/length(aire_de_sante),2)
+
+# crosstab with sous_coordination
+by_aire <- table(sous_coordination, aire_de_sante, exclude=NULL)
+by_aire
+sous_per_aire <- apply(by_aire, 2, function(i) sum(i>0))
+if(any(sous_per_aire>1)) {
+  comment <- paste("some aires de sante correspond to multiple sous-coordinations: ", paste(names(sous_per_aire)[which(sous_per_aire>1)], collapse=', '), "; ", sep='')
+} else comment <- ''
+
+by_aire <- table(zone_de_sante, aire_de_sante, exclude=NULL)
+by_aire
+zones_per_aire <- apply(by_aire, 2, function(i) sum(i>0))
+if(any(zones_per_aire>1)) {
+  comment <- paste(comment, "some aires de sante correspond to multiple zones de sante: ", paste(names(zones_per_aire)[which(zones_per_aire>1)], collapse=', '), "; ", sep='')
+} 
+
+#check against known names of aires de sante for possible mistakes
+known_aires <- unique(subset(cleaning_rules, variable=='aire_de_sante')$good_spelling)
+counts_unknown <- table(aire_de_sante[which(!(aire_de_sante %in% known_aires))])
+counts_unknown <- counts_unknown[which(counts_unknown < 5)]
+
+if(length(counts_unknown) > 0) comment <- paste(comment, "some aires de sante occur less than 5 times and are not present in the cleaning rules--check these for spelling: ", paste(names(counts_unknown), collapse=', '), "; ", sep='')
+
+if(any(is.na(aire_de_sante) | aire_de_sante=='unknown')) {
+  comment <- paste(comment, sum(is.na(aire_de_sante) | aire_de_sante=='unknown'), ' NA values', sep="")
+} else {
+  comment <- paste(comment, "no missing data", sep="")
+}
+
+var_des$com[which(var_des$var =="aire_de_sante")] <- comment
+```
+
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: village_district
+Var. def. : village or district where the case has been reported (manually entry)
+```{r village_district}
+mode(village_district)
+var_des$mod[which(var_des$var =="village_district")]  <- mode(village_district)
+var_des$na[which(var_des$var =="village_district")]  <- sum(is.na(village_district))
+print(paste("Percentage missing ", round(sum(is.na(village_district))*100/length(village_district),1), "%",sep=""))
+var_des$per[which(var_des$var =="village_district")] <- round(sum(is.na(village_district))*100/length(village_district),1)
+
+comment <- paste(sum(is.na(village_district) | hcw=='unknown'), ' NA values', sep='')
+var_des$com[which(var_des$var =="village_district")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: health_area
+Var. def. :  Health zone VHF if avalaible, if not  Health zone CNC otherwise. Xls formula in the data entry sheet:  =UPPER(IF(ZS_VHF>1, ZS_VHF, ZS_CNC)).
+
+```{r health_area}
+mode(health_area)
+var_des$mod[which(var_des$var =="health_area")]  <- mode(health_area)
+var_des$na[which(var_des$var =="health_area")]  <- sum(is.na(health_area))
+print(paste("Percentage missing ", round(sum(is.na(health_area))*100/length(health_area),1), "%",sep=""))
+var_des$per[which(var_des$var =="health_area")] <- round(sum(is.na(health_area))*100/length(health_area),1)
+
+# Crosstab with "province" - list of potential double attribution
+crosstab_HZ_PRO <- as.matrix(table(health_area ,province) )
+crosstab_HZ_PRO[crosstab_HZ_PRO>1] <-1
+# crosstab_HZ_PRO
+total <- rowSums(crosstab_HZ_PRO)
+temp_HZ_PRO   <- as.data.frame(cbind(crosstab_HZ_PRO, total))
+DT::datatable(temp_HZ_PRO[which(temp_HZ_PRO$total>1),]) 
+
+# Crosstab with "sous-coordination"" - list of potential double attribution
+# table(health_area ,sous_coordination)   
+crosstab_HZ_SUB <- as.matrix(table(health_area ,sous_coordination) )
+crosstab_HZ_SUB[crosstab_HZ_SUB>1] <-1
+# crosstab_HZ_SUB
+total <- rowSums(crosstab_HZ_SUB)
+temp_HZ_SUB   <- as.data.frame(cbind (crosstab_HZ_SUB, total))
+DT::datatable(temp_HZ_SUB[which(temp_HZ_SUB$total>1),]) 
+
+# Crosstab with "sub-coordination"zone_de_sante" - list of potential double attribution
+# table(health_area ,zone_de_sante)   
+crosstab_HZ_ZDS <- as.matrix(table(health_area ,zone_de_sante))
+crosstab_HZ_ZDS[crosstab_HZ_SUB>1] <-1
+# crosstab_HZ_ZDS
+total <- rowSums(crosstab_HZ_ZDS)
+temp_HZ_ZDS   <- as.data.frame(cbind (crosstab_HZ_ZDS, total))
+DT::datatable(temp_HZ_ZDS[which(temp_HZ_SUB$total>1),]) 
+
+DT::datatable(x[which(is.na(health_area )), c("mllid","health_area", "zs_cnc","zs_vhf","zs_calc", "province", "sous_coordination", "zone_de_sante")])
+
+comment <- paste("Same health area in multiple columns (homonym or data entry error ?)", sep="")
+var_des$com[which(var_des$var =="health_area")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: number_hcf
+Var. def. : Number of health care facilities visited by the patient before isolation or death (based on xls formula which count automaticaly the number of FOSA reported as visited. ! not checked against the timing before or after the onset, might be a mix. It is a general proxy).
+```{r number_hcf}
+mode(number_hcf)
+summary(number_hcf)
+var_des$mod[which(var_des$var =="number_hcf")]  <- mode(number_hcf)
+var_des$na[which(var_des$var =="number_hcf")]  <- sum(is.na(number_hcf))
+print(paste("Percentage missing ", round(sum(is.na(number_hcf))*100/length(number_hcf),1), "%",sep=""))
+var_des$per[which(var_des$var =="number_hcf")] <- round(sum(is.na(number_hcf))*100/length(number_hcf),1)
+
+#DT::datatable(x[which(!is.na(number_hcf) & !is.na(transmission_place)),  c("mllid","number_hcf", "hcw","occupation", "transmission_place")]) 
+
+comment <- paste("Proxy of the therapeutic journey", sep="")
+var_des$com[which(var_des$var =="number_hcf")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: hospital/hcf information
+
+```{r hospitals}
+comment <- ""
+DTs <- list()
+for(FOSA_number in 1:6){
+  #get variable names and load appropriate data for each FOSA number (1-6)
+  onset_name <- paste('onset_1hosp', sep="")
+  onset <- eval(parse(text=onset_name))
+  
+  hosp_name_name <- paste('hosp', FOSA_number, '_name', sep="")
+  hosp_name <- eval(parse(text=hosp_name_name))
+  
+  hosp_start_name <- paste('hosp', FOSA_number, '_start', sep="")
+  hosp_start <- eval(parse(text=hosp_start_name))
+  
+  hosp_end_name <- paste('hosp', FOSA_number, '_end', sep="")
+  hosp_end <- eval(parse(text=hosp_end_name))
+  
+  if(FOSA_number!=6){
+    date_hosp_start_name <- paste('date_hosp', FOSA_number, '_start', sep="")
+    date_hosp_start <- eval(parse(text=hosp_start_name))
+    
+    date_hosp_end_name <- paste('date_hosp', FOSA_number, '_end', sep="")
+    date_hosp_end <- eval(parse(text=hosp_end_name))
+    
+    var_des$mod[which(var_des$var==date_hosp_start_name)]  <- mode(date_hosp_start)
+    var_des$na[which(var_des$var==date_hosp_start_name)]  <- sum(is.na(date_hosp_start) & number_hcf >= FOSA_number & !is.na(number_hcf))
+    print(paste("Percent ", date_hosp_start_name, " missing: ", round(sum(is.na(date_hosp_start) & number_hcf >= FOSA_number & !is.na(number_hcf))*100/sum(number_hcf >= FOSA_number & !is.na(number_hcf)),1), "%",sep=""))
+    var_des$per[which(var_des$var==date_hosp_start_name)] <- round(sum(is.na(date_hosp_start) & number_hcf >= FOSA_number & !is.na(number_hcf))*100/sum(number_hcf >= FOSA_number & !is.na(number_hcf)),1)
+    var_des$min[which(var_des$var==date_hosp_start_name)] <- min(date_hosp_start, na.rm=T)
+    var_des$max[which(var_des$var==date_hosp_start_name)] <- max(date_hosp_start, na.rm=T)
+
+    var_des$mod[which(var_des$var==date_hosp_end_name)]  <- mode(date_hosp_end)
+    var_des$na[which(var_des$var==date_hosp_end_name)]  <- sum(is.na(date_hosp_end) & number_hcf >= FOSA_number & !is.na(number_hcf))
+    print(paste("Percent ", date_hosp_end_name, " missing: ", round(sum(is.na(date_hosp_end) & number_hcf >= FOSA_number & !is.na(number_hcf))*100/sum(number_hcf >= FOSA_number & !is.na(number_hcf)),1), "%",sep=""))
+    var_des$per[which(var_des$var==date_hosp_end_name)] <- round(sum(is.na(date_hosp_end) & number_hcf >= FOSA_number & !is.na(number_hcf))*100/sum(number_hcf >= FOSA_number & !is.na(number_hcf)),1)
+    var_des$min[which(var_des$var==date_hosp_end_name)] <- min(date_hosp_end, na.rm=T)
+    var_des$max[which(var_des$var==date_hosp_end_name)] <- max(date_hosp_end, na.rm=T)
+    
+    differences <- date_hosp_end - date_hosp_start
+    if(any(differences < 0 | differences > 21, na.rm=T)) {
+      new_comment <- 'some differences between start and end of hospital visit are negative or longer than 21 days; check table'
+      DTs[[length(DTs)+1]] <- DT::datatable(x[which(differences < 0 | differences > 21), c("mllid", date_hosp_start_name, date_hosp_end_name,"onset_iso", "onset_calc", "cte_date", "onset_vhf", "onset_cnc")])
+    } else new_comment <- ""
+    var_des$com[which(var_des$var==date_hosp_start_name)] <- new_comment
+    var_des$com[which(var_des$var==date_hosp_end_name)] <- new_comment
+
+    comment <- paste(comment, new_comment, sep='; ')
+  } #TODO: check for agreement between date_hosp_start and hosp_start
+
+  fosa_code_name <- paste('hosp', FOSA_number, '_fosa_code', sep="")
+  fosa_code <- eval(parse(text=hosp_start_name))
+  
+  var_des$mod[which(var_des$var==fosa_code_name)]  <- mode(fosa_code)
+  var_des$na[which(var_des$var==fosa_code_name)]  <- sum(is.na(fosa_code) & number_hcf >= FOSA_number & !is.na(number_hcf))
+  print(paste("Percentage FOSA codes missing: ", round(sum(is.na(fosa_code) & number_hcf >= FOSA_number & !is.na(number_hcf))*100/sum(number_hcf >= FOSA_number & !is.na(number_hcf)),1), "%",sep=""))
+  var_des$per[which(var_des$var==fosa_code_name)] <- round(sum(is.na(fosa_code) & number_hcf >= FOSA_number & !is.na(number_hcf))*100/sum(number_hcf >= FOSA_number & !is.na(number_hcf)),1)
+  #FOSA codes should be  associated to an indexation list in the gg-sheet.
+  
+  
+  var_des$mod[which(var_des$var==onset_name)]  <- mode(onset)
+  var_des$na[which(var_des$var==onset_name)]  <- sum(is.na(onset) & !is.na(number_hcf) & (number_hcf >= 1))
+  print(paste("Percent ", onset_name, " missing: ", round(sum(is.na(onset) & !is.na(number_hcf) & (number_hcf >= 1))*100/sum(!is.na(number_hcf) & (number_hcf >= 1)),1), "%",sep=""))
+  var_des$per[which(var_des$var==onset_name)] <- round(sum(is.na(onset) & !is.na(number_hcf) & (number_hcf >= 1))*100/sum(!is.na(number_hcf) & (number_hcf >= 1)),1)
+  var_des$min[which(var_des$var==onset_name)] <- min(onset, na.rm=TRUE)
+  var_des$max[which(var_des$var==onset_name)] <- max(onset, na.rm=TRUE)
+
+  # check ouliers 
+  DTs[[length(DTs)+1]] <- DT::datatable(x[which(onset < 0), c("mllid", onset_name, "onset_iso","onset_calc", "cte_date", "onset_vhf", "onset_cnc")])
+  DTs[[length(DTs)+1]] <- DT::datatable(x[which(onset > 300), c("mllid", onset_name, "onset_iso","onset_calc", "cte_date", "onset_vhf", "onset_cnc")])
+
+  if(any(onset < 0 | onset > 300) & FOSA_number==1) {
+    new_comment <- "some extreme values of hosp_onset (<0 or >300): check table"
+  } else new_comment <- ""
+  var_des$com[which(var_des$var==onset_name)] <- new_comment
+  comment <- paste(comment, new_comment, sep="; ")
+
+  enough_visits <- any(number_hcf >= FOSA_number & !is.na(number_hcf))
+  
+  var_des$mod[which(var_des$var==hosp_name_name)]  <- mode(hosp_name)
+  var_des$na[which(var_des$var==hosp_name_name)]  <- sum(is.na(hosp_name) & number_hcf >= FOSA_number & !is.na(number_hcf))
+  
+  if(enough_visits){
+    print(paste("Percentage missing ", round(sum(is.na(hosp_name) & number_hcf >= FOSA_number & !is.na(number_hcf))*100/sum(number_hcf >= FOSA_number & !is.na(number_hcf)),1), "%",sep=""))
+    var_des$per[which(var_des$var==hosp_name_name)] <- round(sum(is.na(hosp_name) & number_hcf >= FOSA_number & !is.na(number_hcf))*100/sum(number_hcf >= FOSA_number & !is.na(number_hcf)),1)
+    var_des$com[which(var_des$var==hosp_name_name)] <- ""
+  }
+
+  var_des$mod[which(var_des$var==hosp_start_name)]  <- mode(hosp_start)
+  var_des$na[which(var_des$var==hosp_start_name)]  <- sum(is.na(hosp_start) & number_hcf >= FOSA_number & !is.na(number_hcf))
+  if(enough_visits){
+    print(paste("Percent ",hosp_start_name, " missing: ", round(sum(is.na(hosp_start) & number_hcf >= FOSA_number & !is.na(number_hcf))*100/sum(number_hcf >= FOSA_number & !is.na(number_hcf)),1), "%",sep=""))
+    var_des$per[which(var_des$var==hosp_start_name)] <- round(sum(is.na(hosp_start) & number_hcf >= FOSA_number & !is.na(number_hcf))*100/sum(number_hcf >= FOSA_number & !is.na(number_hcf)),1)
+  var_des$min[which(var_des$var==hosp_start_name)] <- min(hosp_start, na.rm=TRUE)
+  var_des$max[which(var_des$var==hosp_start_name)] <- max(hosp_start, na.rm=TRUE)
+  }
+
+  differences <- as.numeric(hosp_end) - as.numeric(hosp_start)
+  summary(differences)
+  if(any(differences < 0 | differences > 21, na.rm=TRUE)) {
+    new_comment <- "some extreme outlier differences between hospital entry and exit (<0 and >21 days); check table"
+    DTs[[length(DTs)+1]] <- DT::datatable(x[which(differences < 0 | differences > 21), c("mllid", hosp_start_name, hosp_end_name, onset_name, "onset_iso","onset_calc", "cte_date", "onset_vhf", "onset_cnc")])
+  } else new_comment <- ""
+
+  var_des$com[which(var_des$var==hosp_start_name)] <- new_comment
+  comment <- paste(comment, new_comment, sep='; ')
+
+  var_des$mod[which(var_des$var==hosp_end_name)]  <- mode(hosp_end)
+  var_des$na[which(var_des$var==hosp_end_name)]  <-  sum(is.na(hosp_end) & number_hcf >= FOSA_number & !is.na(number_hcf))
+  if(enough_visits) {
+    print(paste("Percent ", hosp_end_name, " missing ", round(sum(is.na(hosp_end) & number_hcf >= FOSA_number & !is.na(number_hcf))*100/sum(number_hcf >= FOSA_number & !is.na(number_hcf)),1), "%",sep=""))
+    var_des$per[which(var_des$var==hosp_end_name)] <- round(sum(is.na(hosp_end) & number_hcf >= FOSA_number & !is.na(number_hcf))*100/sum(number_hcf >= FOSA_number & !is.na(number_hcf)),1)
+  var_des$min[which(var_des$var==hosp_end_name)] <- min(hosp_end, na.rm=TRUE)
+  var_des$max[which(var_des$var==hosp_end_name)] <- min(hosp_end, na.rm=TRUE)
+  }
+  
+  var_des$com[which(var_des$var==hosp_end_name)] <- new_comment
+}
+htmltools::tagList(DTs)
+```
+```{r comment="", results='asis', echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: traditional_healer
+Var. def. : Having been in contact  with a traditonal healer.
+```{r traditional_healer}
+mode(traditional_healer)
+var_des$mod[which(var_des$var =="traditional_healer")]  <- mode(traditional_healer)
+var_des$na[which(var_des$var =="traditional_healer")]  <- sum(is.na(traditional_healer) | traditional_healer=='unknown')
+print(paste("Percentage missing ", round(sum(is.na(traditional_healer)| traditional_healer=='unknown')*100/length(traditional_healer),1), "%",sep=""))
+var_des$per[which(var_des$var =="traditional_healer")] <- round(sum(is.na(traditional_healer)| traditional_healer=='unknown')*100/length(traditional_healer),1)
+
+table(traditional_healer,exclude = NULL)
+DT::datatable(x[which(!is.na(traditional_healer)),  c("mllid","traditional_healer", "transmission_place","hcw","occupation")])
+
+comment <- paste("Difficult to interpret. Check inconsistent coding (proposed a post processing in script)", sep="")
+var_des$com[which(var_des$var =="traditional_healer")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: traditonal_healer_start_date
+Var. def. : Start date contact traditonnal healer
+ character instead of date # inconsistent coding
+```{r traditonal_healer_start_date}
+mode(traditonal_healer_start_date)
+unique(traditonal_healer_start_date) 
+ 
+var_des$mod[which(var_des$var =="traditonal_healer_start_date")]  <- mode(traditonal_healer_start_date)
+var_des$na[which(var_des$var =="traditonal_healer_start_date")]  <- sum((is.na(traditonal_healer_start_date) | traditonal_healer_start_date=='unknown') & (!(traditional_healer %in% c('no', 'unknown')) & !is.na(traditional_healer)))
+print(paste("Percent traditonal_healer_start_date missing ", round(sum((is.na(traditonal_healer_start_date) | traditonal_healer_start_date=='unknown') & (!(traditional_healer %in% c('no', 'unknown')) & !is.na(traditional_healer)))*100/sum(!(traditional_healer %in% c('no', 'unknown')) & !is.na(traditional_healer)),1), "%",sep=""))
+var_des$per[which(var_des$var =="traditonal_healer_start_date")] <- round(sum((is.na(traditonal_healer_start_date) | traditonal_healer_start_date=='unknown') & (!(traditional_healer %in% c('no', 'unknown')) & !is.na(traditional_healer)))*100/sum(!(traditional_healer %in% c('no', 'unknown')) & !is.na(traditional_healer)),1)
+var_des$min[which(var_des$var =="traditonal_healer_start_date")] <- min(suppressWarnings(as.Date(as.numeric(traditonal_healer_start_date), origin = "1899-12-30")), na.rm=T)
+var_des$max[which(var_des$var =="traditonal_healer_start_date")] <- max(suppressWarnings(as.Date(as.numeric(traditonal_healer_start_date), origin = "1899-12-30")), na.rm=T)
+
+# print(x[which(!is.na(traditonal_healer_start_date)), c("mllid", "traditonal_healer_start_date","onset_iso", "onset_calc", "cte_date", "onset_vhf", "onset_cnc")]) 
+# 
+comment <- "Change date format in excel. Note calendar but value for the excel storage of date"
+var_des$com[which(var_des$var =="traditonal_healer_start_date")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: traditonal_healer_enddate
+Var. def. : End date contact  traditonnal healer
+```{r traditonal_healer_enddate}
+mode(traditonal_healer_enddate)
+unique(traditonal_healer_enddate) 
+ 
+var_des$mod[which(var_des$var =="traditonal_healer_enddate")]  <- mode(traditonal_healer_enddate)
+var_des$na[which(var_des$var =="traditonal_healer_enddate")]  <- sum((is.na(traditonal_healer_enddate) | traditonal_healer_enddate=='unknown') & (!(traditional_healer %in% c('no', 'unknown')) & !is.na(traditional_healer)))
+print(paste("Percent traditonal_healer_enddate missing ", round(sum((is.na(traditonal_healer_enddate) | traditonal_healer_enddate=='unknown') & (!(traditional_healer %in% c('no', 'unknown')) & !is.na(traditional_healer)))*100/sum(!(traditional_healer %in% c('no', 'unknown')) & !is.na(traditional_healer)),1), "%",sep=""))
+var_des$per[which(var_des$var =="traditonal_healer_enddate")] <- round(sum((is.na(traditonal_healer_enddate) | traditonal_healer_enddate=='unknown') & (!(traditional_healer %in% c('no', 'unknown')) & !is.na(traditional_healer)))*100/sum(!(traditional_healer %in% c('no', 'unknown')) & !is.na(traditional_healer)),1)
+var_des$min[which(var_des$var =="traditonal_healer_enddate")] <- min(suppressWarnings(as.Date(as.numeric(traditonal_healer_enddate), origin = "1899-12-30")), na.rm=T)
+var_des$max[which(var_des$var =="traditonal_healer_enddate")] <- max(suppressWarnings(as.Date(as.numeric(traditonal_healer_enddate), origin = "1899-12-30")), na.rm=T)
+
+comment <- "Change date format in excel. Note calendar but value for the excel storage of date"
+var_des$com[which(var_des$var =="traditonal_healer_enddate")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: traditional_healer_village
+Var. def. : Location of the traditional healer
+```{r traditional_healer_village}
+mode(traditional_healer_village)
+var_des$mod[which(var_des$var =="traditional_healer_village")]  <- mode(traditional_healer_village)
+table(traditional_healer_village, exclude=NULL) 
+var_des$na[which(var_des$var =="traditional_healer_village")]  <- sum((is.na(traditional_healer_village) | traditional_healer_village=='unknown') & (!(traditional_healer %in% c('no', 'unknown')) & !is.na(traditional_healer)))
+print(paste("Percentage missing= ", round(sum((is.na(traditional_healer_village) | traditional_healer_village=='unknown') & (!(traditional_healer %in% c('no', 'unknown')) & !is.na(traditional_healer)))*100/sum(!(traditional_healer %in% c('no', 'unknown')) & !is.na(traditional_healer)),1), "%",sep=""))
+var_des$per[which(var_des$var=='traditional_healer_village')] <- round(sum((is.na(traditional_healer_village) | traditional_healer_village=='unknown') & (!(traditional_healer %in% c('no', 'unknown')) & !is.na(traditional_healer)))*100/sum(!(traditional_healer %in% c('no', 'unknown')) & !is.na(traditional_healer)),1)
+
+comment <- ""
+var_des$com[which(var_des$var =="traditional_healer_village")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+## Behavior, transmission, and risk factors
+
+### Variable: hcw
+Var. def. : being a healthcare worker
+
+```{r hcw}
+mode(hcw)
+var_des$mod[which(var_des$var =="hcw")]  <- mode(hcw)
+var_des$na[which(var_des$var =="hcw")]  <- sum(is.na(hcw) | hcw=='unknown')
+print(paste("Percentage missing ", round(sum(is.na(hcw) | hcw=='unknown')*100/length(hcw),1), "%",sep=""))
+var_des$per[which(var_des$var =="hcw")] <- round(sum(is.na(hcw) | hcw=='unknown')*100/length(hcw),1)
+
+table(hcw, exclude= NULL)
+table(x[hcw =="hcw",]$occupation,  x[hcw == "hcw",]$hcw) 
+
+comment <- paste(sum(is.na(hcw) | hcw=='unknown'), ' NA values', sep='')
+var_des$com[which(var_des$var =="hcw")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: hcw_facility_fosa_code
+Var. def. : Unique ID Line list CT/CTE
+```{r hcw_facility_fosa_code}
+mode(hcw_facility_fosa_code)
+var_des$mod[which(var_des$var =="hcw_facility_fosa_code")]  <- mode(hcw_facility_fosa_code)
+var_des$na[which(var_des$var =="hcw_facility_fosa_code")]  <- sum(is.na(hcw_facility_fosa_code))
+print(paste("Percentage missing ", round(sum(is.na(hcw_facility_fosa_code))*100/length(hcw_facility_fosa_code),1), "%",sep=""))
+var_des$per[which(var_des$var =="hcw_facility_fosa_code")] <- round(sum(is.na(hcw_facility_fosa_code))*100/length(hcw_facility_fosa_code),1)
+
+unique(hcw_facility_fosa_code )[1:100]
+comment <- paste("Format is ", mode(hcw_facility_fosa_code), ' and ', round(sum(is.na(hcw_facility_fosa_code))*100/length(hcw_facility_fosa_code),1), '% of values are NA', sep="")
+var_des$com[which(var_des$var =="hcw_facility_fosa_code")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: pregnantlactating
+Var. def. : Women's status with regards to pregancy and breastfeeding (ignoring males in denominators)
+
+```{r pregnantlactating}
+mode(pregnantlactating)
+summary(pregnantlactating)
+var_des$mod[which(var_des$var =="pregnantlactating")]  <- mode(pregnantlactating)
+var_des$na[which(var_des$var =="pregnantlactating")]  <- sum(is.na(pregnantlactating) & sex!="male")
+percent <- round(sum(is.na(pregnantlactating) & sex!="male")*100/sum(sex!="male"),1)
+print(paste("Percentage missing (females only) ", percent, "%",sep=""))
+var_des$per[which(var_des$var =="pregnantlactating")] <- percent
+
+#check for any males listed as pregnant
+if(any(sex=="male" & !is.na(pregnantlactating))){
+  pregnant_males <- which(sex=="male" & !is.na(pregnantlactating))
+  DT::datatable(x[which(x$sex=="male" & !is.na(x$pregnantlactating)),  c("mllid","pregnantlactating", "sex" , "gender")])
+  comment <- paste(length(pregnant_males), " males listed as pregnant or lactating (check table); ")
+} else comment <- ""
+
+table (pregnantlactating, exclude= NULL)
+#DT::datatable(x[which(!is.na(x$pregnantlactating)),  c("mllid","pregnantlactating", "sex" , "gender")])
+#DT::datatable(x[which(x$sex!="male" & !is.na(x$pregnantlactating)),  c("mllid","pregnantlactating", "sex" , "gender")])
+
+comment <- paste(comment, "formally, should not contains blank and code other than .P. or .L. accoding to the var. dictionary. Correct the status for sex == male ", sep="")
+var_des$com[which(var_des$var =="pregnantlactating")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: sexual_transmission
+Var. def. :  Document sexual transmission
+```{r sexual_transmission}
+table(sexual_transmission)
+var_des$mod[which(var_des$var =="sexual_transmission")]  <- mode(sexual_transmission)
+var_des$na[which(var_des$var =="sexual_transmission")]  <- sum(is.na(sexual_transmission))
+print(paste("Percentage missing ", round(sum(is.na(sexual_transmission))*100/length(sexual_transmission),1), "%",sep=""))
+var_des$per[which(var_des$var =="sexual_transmission")] <- round(sum(is.na(sexual_transmission))*100/length(sexual_transmission),1)
+DT::datatable(x[which(!is.na(x$sexual_transmission)),  c("mllid","sexual_transmission", "sex" , "gender" , "age")])
+
+comment <- paste("? discuss to recode n = no to NA ? or NA to no", sep="")
+var_des$com[which(var_des$var =="sexual_transmission")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: hcw_facility
+Var. def. :  name of the healtcare facilities where the HCW is working
+```{r hcw_facility}
+var_des$mod[which(var_des$var =="hcw_facility")]  <- mode(hcw_facility)
+var_des$na[which(var_des$var =="hcw_facility")]  <- sum(is.na(hcw_facility) | hcw_facility %in% c('unknown', 'unknown_hcf'))
+print(paste("Percentage missing ", round(sum(is.na(hcw_facility) | hcw_facility %in% c('unknown', 'unknown_hcf'))*100/length(hcw_facility),1), "%",sep=""))
+var_des$per[which(var_des$var =="hcw_facility")] <- round(sum(is.na(hcw_facility) | hcw_facility %in% c('unknown', 'unknown_hcf'))*100/length(hcw_facility),1)
+
+comment <- ""
+var_des$com[which(var_des$var =="hcw_facility")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: transmission_place
+Var. def. : Where the case would have been exposed to EVD. Based on slide/narrative of MoH coord.meeting. 
+Used by IPC team to prioritize the FOSA, for initiating investigation and supervision PCI.
+```{r transmission_place}
+var_des$mod[which(var_des$var =="transmission_place")]  <- mode(transmission_place)
+var_des$na[which(var_des$var =="transmission_place")]  <- sum(is.na(transmission_place))
+print(paste("Percentage missing ", round(sum(is.na(transmission_place))*100/length(transmission_place),1), "%",sep=""))
+var_des$per[which(var_des$var =="transmission_place")] <- round(sum(is.na(transmission_place))*100/length(transmission_place),1)
+
+unique(transmission_place)
+table(transmission_place,transmission_place_group , exclude= NULL)
+table(transmission_place,hcw, exclude= NULL )
+
+print(x[which(hcw == "hcw" & transmission_place =="community" ),  c("mllid","transmission_place" , "hcw","hcw_facility", "occupation")]) # to be checked
+
+DT::datatable(x[which(hcw == "hcw" & transmission_place =="family" ),  c("mllid","transmission_place" , "hcw","hcw_facility", "occupation")]) # four hcw exposed in the community
+
+comment <- paste("For info: only four HCW would have epilink with the community/familly [to discard of nosocomial infection,transmission_place_group. The majority of cases among HWs are linked to possible nosocomial exposure (but no date 2-21 days countercheck, no matching wih source case). Discuss to derived a varaible .transmission_place. in the aaa.R script with various levels of grouping", sep="")
+var_des$com[which(var_des$var =="transmission_place")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: transmission_place_group
+Var. def. : 
+```{r transmission_place_group}
+#TODO: compare to transmission_place
+mode(transmission_place_group)
+var_des$mod[which(var_des$var =="transmission_place_group")]  <- mode(transmission_place_group)
+var_des$na[which(var_des$var =="transmission_place_group")]  <- sum(is.na(transmission_place_group))
+print(paste("Percentage missing ", round(sum(is.na(transmission_place_group))*100/length(transmission_place_group),1), "%",sep=""))
+var_des$per[which(var_des$var =="transmission_place_group")] <- round(sum(is.na(transmission_place_group))*100/length(firstname),1)
+table(transmission_place_group, exclude= NULL)
+
+comment <- ""
+var_des$com[which(var_des$var =="transmission_place_group")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: vacc
+Var. def. : Status vaccination
+```{r vacc}
+var_des$mod[which(var_des$var =="vacc")]  <- mode(vacc)
+var_des$na[which(var_des$var =="vacc")]  <- sum(is.na(vacc) | vacc=='unknown')
+print(paste("Percentage missing ", round(sum(is.na(vacc) | vacc=='unknown')*100/length(vacc),1), "%",sep=""))
+var_des$per[which(var_des$var =="vacc")] <- round(sum(is.na(vacc) | vacc=='unknown')*100/length(vacc),1)
+
+table(vacc, exclude= NULL)
+table(vacc, contact_registered) 
+
+comment <- ""
+var_des$com[which(var_des$var =="vacc")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable:vacc_date
+Var. def. : date of vaccination
+```{r vacc_date}
+var_des$mod[which(var_des$var =="vacc_date")]  <- mode(vacc_date)
+var_des$na[which(var_des$var =="vacc_date")]  <- sum(is.na(vacc_date) & vacc=='yes')
+print(paste("Percentage missing ", round(sum(is.na(vacc_date) & vacc=='yes')*100/sum(vacc=='yes'),1), "%",sep=""))
+var_des$per[which(var_des$var =="vacc_date")] <- round(sum(is.na(vacc_date) & vacc=='yes')*100/sum(vacc=='yes'),1)
+var_des$min[which(var_des$var =="vacc_date")] <- as.character(min(vacc_date,na.rm=T))
+var_des$max[which(var_des$var =="vacc_date")] <- as.character(max(vacc_date,na.rm=T))
+
+table(vacc_date) # error in coding /importation from xls.  No recognzed as date during the copy paste
+comment <- "Check the vaccination date format; "
+
+vacc_date_check <- as.character(vacc_date)
+vacc_date_check[which(vacc_date>1)] <- "Available date"
+vacc_date_check[which(is.na(vacc_date))] <- "Missing date"
+table(vacc, vacc_date_check)
+
+mismatches <- vacc_date_check=='Available date' & vacc %in% c('no', 'unknown')
+if(any(mismatches)){
+  comment <- paste(comment, sum(mismatches), ' cases have a vaccination date but are not recorded as being vaccinated; check table', sep="")
+  DT::datatable(x[which(mismatches),  c("mllid","vacc","vacc_date",'type_vacc')])  
+}
+
+var_des$com[which(var_des$var =="vacc_date")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: date_vacc
+Var. def. : Date of vaccination
+```{r date_vacc}
+mode(date_vacc)
+summary(date_vacc) 
+
+var_des$mod[which(var_des$var =="date_vacc")]  <- mode(date_vacc)
+var_des$na[which(var_des$var =="date_vacc")]  <- sum(is.na(date_vacc) & vacc!='no')
+print(paste("Percent date_vacc missing ", round(sum(is.na(date_vacc) & vacc!='no')*100/sum(vacc!='no'),1), "%",sep=""))
+var_des$per[which(var_des$var =="date_vacc")] <- round(sum(is.na(date_vacc) & vacc!='no')*100/sum(vacc!='no'),1)
+var_des$min[which(var_des$var =="date_vacc")] <- as.character(min(date_vacc, na.rm=T))
+var_des$max[which(var_des$var =="date_vacc")] <- as.character(max(date_vacc, na.rm=T))
+
+#check for agreement between date_vacc and vacc_date
+table(!is.na(date_vacc), !is.na(vacc_date))
+mismatches <- (!is.na(date_vacc) & is.na(vacc_date)) | (is.na(date_vacc) & !is.na(vacc_date))
+mismatches <- mismatches | (suppressWarnings(as.Date(as.numeric(vacc_date), origin="1899-12-30")) != date_vacc)
+
+if(any(mismatches)){
+  DT::datatable(x[which(mismatches), c("mllid", "date_vacc","vacc_date", "vacc")]) 
+  comment <- 'some vaccination dates are mismatched; check table'
+} else comment <- ''
+
+var_des$com[which(var_des$var =="date_vacc")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable:type_vacc
+Var. def. : type of vaccine
+```{r type_vacc}
+var_des$mod[which(var_des$var =="type_vacc")]  <- mode(type_vacc)
+var_des$na[which(var_des$var =="type_vacc")]  <- sum(is.na(type_vacc))
+print(paste("Percentage missing ", round(sum(is.na(type_vacc))*100/length(type_vacc),1), "%",sep=""))
+var_des$per[which(var_des$var =="type_vacc")] <- round(sum(is.na(type_vacc))*100/length(type_vacc),1)
+
+table(type_vacc, exclude= NULL)
+comment <- paste(round(sum(is.na(type_vacc))*100/length(type_vacc),1), "% of values NA", sep="")
+var_des$com[which(var_des$var =="vacc")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+
+## Contact information
+
+
+### Variable: contact_id
+Var. def. : Unique idenfier  for first source case. 
+```{r contact_id}
+mode(contact_id)
+var_des$mod[which(var_des$var =="contact_id")]   <- mode(contact_id)
+var_des$na[which(var_des$var =="contact_id")]    <- sum(is.na(contact_id))
+print(paste("Percentage missing ", round(sum(is.na(contact_id))*100/length(contact_id),1), "%",sep=""))
+var_des$per[which(var_des$var =="contact_id")]   <- round(sum(is.na(contact_id))*100/length(contact_id),1)
+
+#unique(contact_id)
+
+comment <- paste("Mix of name and various ID's types", sep="")
+var_des$com[which(var_des$var =="contact_id")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: community_contact_location_1
+Var. def. :  Location of the first contact (location_1)
+```{r community_contact_location_1}
+mode(community_contact_location_1)
+var_des$mod[which(var_des$var =="community_contact_location_1")]  <- mode(community_contact_location_1)
+var_des$na[which(var_des$var =="community_contact_location_1")]  <- sum(is.na(community_contact_location_1))
+print(paste("Percentage missing ", round(sum(is.na(community_contact_location_1))*100/length(community_contact_location_1),1), "%",sep=""))
+var_des$per[which(var_des$var =="community_contact_location_1")] <- round(sum(is.na(community_contact_location_1))*100/length(community_contact_location_1),1)
+comment <- paste("None", sep="")
+var_des$com[which(var_des$var =="community_contact_location_1")] <- comment
+print(comment)
+```
+
+### Variable: cc_location_1_start
+Var. def. :  location_1  start date
+```{r cc_location_1_start}
+mode(cc_location_1_start)
+summary(cc_location_1_start) # negative values
+
+var_des$mod[which(var_des$var =="cc_location_1_start")]  <- mode(cc_location_1_start)
+var_des$na[which(var_des$var =="cc_location_1_start")]  <- sum(is.na(cc_location_1_start))
+print(paste("Percent cc_location_1_start missing ", round(sum(is.na(cc_location_1_start))*100/length(cc_location_1_start),1), "%",sep=""))
+var_des$per[which(var_des$var =="cc_location_1_start")] <- round(sum(is.na(cc_location_1_start))*100/length(cc_location_1_start),1)
+var_des$min[which(var_des$var =="cc_location_1_start")] <- as.character(summary(cc_location_1_start)[[1]])
+#var_des$max[which(var_des$var =="cc_location_1_start")] <- as.character(summary(cc_location_1_start)[[6]])
+
+print(x[which(!is.na(cc_location_1_start)), c("mllid", "cc_location_1_start","onset_iso", "onset_calc", "cte_date", "onset_vhf", "onset_cnc")]) 
+
+comment <- "some dates and some locations: check"
+var_des$com[which(var_des$var =="cc_location_1_start")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: cc_location_1_end
+Var. def. :  location_1  end date
+```{r cc_location_1_end}
+var_des$mod[which(var_des$var =="cc_location_1_end")]  <- mode(cc_location_1_end)
+var_des$na[which(var_des$var =="cc_location_1_end")]  <- sum(is.na(cc_location_1_end))
+print(paste("Percent cc_location_1_end missing ", round(sum(is.na(cc_location_1_end))*100/length(cc_location_1_end),1), "%",sep=""))
+var_des$per[which(var_des$var =="cc_location_1_end")] <- round(sum(is.na(cc_location_1_end))*100/length(cc_location_1_end),1)
+var_des$min[which(var_des$var =="cc_location_1_end")] <- as.character(summary(cc_location_1_end)[[1]])
+var_des$max[which(var_des$var =="cc_location_1_end")] <- as.character(summary(cc_location_1_end)[[6]])
+
+table(cc_location_1_end)
+comment <- "needs additional confirmation: very few values and lack of correspondence to cc_location_1_start"
+var_des$com[which(var_des$var =="cc_location_1_end")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: community_contact_location_2
+Var. def. : Location of the second contact (location_2)
+```{r community_contact_location_2}
+mode(community_contact_location_2)
+var_des$mod[which(var_des$var =="community_contact_location_2")]  <- mode(community_contact_location_2)
+var_des$na[which(var_des$var =="community_contact_location_2")]  <- sum(is.na(community_contact_location_2))
+print(paste("Percentage missing ", round(sum(is.na(community_contact_location_2))*100/length(community_contact_location_2),2), "%",sep=""))
+var_des$per[which(var_des$var =="community_contact_location_2")] <- round(sum(is.na(community_contact_location_2))*100/length(community_contact_location_2),2)
+comment <- paste("None", sep="")
+var_des$com[which(var_des$var =="community_contact_location_2")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: cc_location_2_start
+Var. def. :  location_2  start date
+```{r cc_location_2_start}
+var_des$mod[which(var_des$var =="cc_location_2_start")]  <- mode(cc_location_2_start)
+var_des$na[which(var_des$var =="cc_location_2_start")]  <- sum(is.na(cc_location_2_start))
+print(paste("Percent cc_location_2_start missing ", round(sum(is.na(cc_location_2_start))*100/length(cc_location_2_start),2), "%",sep=""))
+var_des$per[which(var_des$var =="cc_location_2_start")] <- round(sum(is.na(cc_location_2_start))*100/length(cc_location_2_start),2)
+var_des$min[which(var_des$var =="cc_location_2_start")] <- min(cc_location_2_start, na.rm=T)
+var_des$max[which(var_des$var =="cc_location_2_start")] <- max(cc_location_2_start, na.rm=T)
+
+print(x[which(!is.na(cc_location_2_start)), c("mllid", "cc_location_2_start","onset_iso", "onset_calc", "cte_date", "onset_vhf", "onset_cnc")]) 
+
+comment <- ""
+var_des$com[which(var_des$var =="cc_location_2_start")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: cc_location_2_end
+Var. def. :  location_2  end date
+```{r cc_location_2_end}
+var_des$mod[which(var_des$var =="cc_location_2_end")]  <- mode(cc_location_2_end)
+var_des$na[which(var_des$var =="cc_location_2_end")]  <- sum(is.na(cc_location_2_end))
+print(paste("Percent cc_location_2_end missing ", round(sum(is.na(cc_location_2_end))*100/length(cc_location_2_end),2), "%",sep=""))
+var_des$per[which(var_des$var =="cc_location_2_end")] <- round(sum(is.na(cc_location_2_end))*100/length(cc_location_2_end),2)
+var_des$min[which(var_des$var =="cc_location_2_end")] <- min(cc_location_2_end, na.rm=T)
+var_des$max[which(var_des$var =="cc_location_2_end")] <- max(cc_location_2_end, na.rm=T)
+
+print(x[which(!is.na(cc_location_2_end)), c("mllid", "hosp6_start","onset_iso", "onset_calc", "cte_date", "onset_vhf", "onset_cnc")]) 
+
+comment <- "None"
+var_des$com[which(var_des$var =="cc_location_2_end")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: date_contact_confirmed_case1
+Var. def. : Start date of contact 1
+```{r date_contact_confirmed_case1}
+mode(date_contact_confirmed_case1)
+summary(date_contact_confirmed_case1) 
+unique(date_contact_confirmed_case1)
+
+var_des$mod[which(var_des$var =="date_contact_confirmed_case1")]  <- mode(date_contact_confirmed_case1)
+var_des$na[which(var_des$var =="date_contact_confirmed_case1")]  <- sum(is.na(date_contact_confirmed_case1))
+print(paste("Percent date_contact_confirmed_case1 missing ", round(sum(is.na(date_contact_confirmed_case1))*100/length(date_contact_confirmed_case1),1), "%",sep=""))
+var_des$per[which(var_des$var =="date_contact_confirmed_case1")] <- round(sum(is.na(date_contact_confirmed_case1))*100/length(date_contact_confirmed_case1),1)
+var_des$min[which(var_des$var =="date_contact_confirmed_case1")] <- as.character(summary(date_contact_confirmed_case1)[[1]])
+var_des$max[which(var_des$var =="date_contact_confirmed_case1")] <- as.character(summary(date_contact_confirmed_case1)[[6]])
+
+DT::datatable(x[which(!is.na(date_contact_confirmed_case1)), c("mllid", "date_contact_confirmed_case1","onset_iso", "onset_calc", "cte_date", "onset_vhf", "onset_cnc")]) 
+
+comment <- "Change date formt in excel. Note calendar but value for the excel storage of date"
+var_des$com[which(var_des$var =="date_contact_confirmed_case1")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: enddate1_contact_confirmed
+Var. def. :
+```{r enddate1_contact_confirmed}
+mode(enddate1_contact_confirmed)
+summary(enddate1_contact_confirmed) # negative values 
+
+var_des$mod[which(var_des$var =="enddate1_contact_confirmed")]  <- mode(enddate1_contact_confirmed)
+var_des$na[which(var_des$var =="enddate1_contact_confirmed")]  <- sum(is.na(enddate1_contact_confirmed))
+print(paste("Percent enddate1_contact_confirmed missing ", round(sum(is.na(enddate1_contact_confirmed))*100/length(enddate1_contact_confirmed),1), "%",sep=""))
+var_des$per[which(var_des$var =="enddate1_contact_confirmed")] <- round(sum(is.na(enddate1_contact_confirmed))*100/length(enddate1_contact_confirmed),1)
+# var_des$min[which(var_des$var =="enddate1_contact_confirmed")] <- as.character(summary(enddate1_contact_confirmed)[[1]])
+# var_des$max[which(var_des$var =="enddate1_contact_confirmed")] <- as.character(summary(enddate1_contact_confirmed)[[6]])
+
+# print(x[which(!is.na(enddate1_contact_confirmed)), c("mllid", "enddate1_contact_confirmed","onset_iso", "onset_calc", "cte_date", "onset_vhf", "onset_cnc")]) 
+
+# check negative period 
+# x$check_diff_date_contact_1 <- as.numeric(x$enddate1_contact_confirmed - x$date_contact_confirmed_case1)
+# summary(check_diff_date_contact_1)
+# print(x[which(check_diff_date_contact_1 < 0), c("mllid", "check_diff_date_contact_1" , "date_contact_confirmed_case1" , "enddate1_contact_confirmed")]) 
+#x$check_diff_date_contact_1 <- NULL
+
+# comment <- "Character instead of date # inconsistent coding. To be corrected prior to ceck the difference"
+# var_des$com[which(var_des$var =="traditonal_healer_enddate")] <- comment
+comment <- 'to check'
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: contact_id2
+Var. def. :
+```{r contact_id2}
+mode(contact_id2)
+var_des$mod[which(var_des$var =="contact_id2")]   <- mode(contact_id2)
+var_des$na[which(var_des$var =="contact_id2")]    <- sum(is.na(contact_id2))
+print(paste("Percentage missing ", round(sum(is.na(contact_id2))*100/length(contact_id2),1), "%",sep=""))
+var_des$per[which(var_des$var =="contact_id2")]   <- round(sum(is.na(contact_id2))*100/length(contact_id2),1)
+
+unique(contact_id2)
+comment <- paste("Mix of name and various ID's types", sep="")
+var_des$com[which(var_des$var =="contact_id2")] <- comment
+comment <- 'to check'
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: date_contact_confirmed_case2
+Var. def. :
+```{r date_contact_confirmed_case2}
+mode(date_contact_confirmed_case2)
+summary(date_contact_confirmed_case2) 
+unique(date_contact_confirmed_case2)
+
+var_des$mod[which(var_des$var =="date_contact_confirmed_case2")]  <- mode(date_contact_confirmed_case2)
+var_des$na[which(var_des$var =="date_contact_confirmed_case2")]  <- sum(is.na(date_contact_confirmed_case2))
+print(paste("Percent date_contact_confirmed_case2 missing ", round(sum(is.na(date_contact_confirmed_case2))*100/length(date_contact_confirmed_case2),1), "%",sep=""))
+var_des$per[which(var_des$var =="date_contact_confirmed_case2")] <- round(sum(is.na(date_contact_confirmed_case2))*100/length(date_contact_confirmed_case2),1)
+var_des$min[which(var_des$var =="date_contact_confirmed_case2")] <- as.character(summary(date_contact_confirmed_case2)[[1]])
+#var_des$max[which(var_des$var =="date_contact_confirmed_case2")] <- as.character(summary(date_contact_confirmed_case2)[[6]])
+
+DT::datatable(x[which(!is.na(date_contact_confirmed_case2)), c("mllid", "date_contact_confirmed_case2","onset_iso", "onset_calc", "cte_date", "onset_vhf", "onset_cnc")]) 
+
+comment <- "Change date format in excel. Not calendar date but value for the excel storage of date"
+var_des$com[which(var_des$var =="date_contact_confirmed_case2")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: date_contact_confirmed_case2_end
+Var. def. :
+```{r date_contact_confirmed_case2_end}
+mode(date_contact_confirmed_case2_end)
+summary(date_contact_confirmed_case2_end) # negative values 
+
+var_des$mod[which(var_des$var =="date_contact_confirmed_case2_end")]  <- mode(date_contact_confirmed_case2_end)
+var_des$na[which(var_des$var =="date_contact_confirmed_case2_end")]  <- sum(is.na(date_contact_confirmed_case2_end))
+print(paste("Percent date_contact_confirmed_case2_end missing ", round(sum(is.na(date_contact_confirmed_case2_end))*100/length(date_contact_confirmed_case2_end),1), "%",sep=""))
+var_des$per[which(var_des$var =="date_contact_confirmed_case2_end")] <- round(sum(is.na(date_contact_confirmed_case2_end))*100/length(date_contact_confirmed_case2_end),1)
+var_des$min[which(var_des$var =="date_contact_confirmed_case2_end")] <- as.character(summary(date_contact_confirmed_case2_end)[[1]])
+var_des$max[which(var_des$var =="date_contact_confirmed_case2_end")] <- as.character(summary(date_contact_confirmed_case2_end)[[6]])
+
+
+DT::datatable(x[which(!is.na(date_contact_confirmed_case2_end)), c("mllid", "date_contact_confirmed_case2_end","onset_iso", "onset_calc", "cte_date", "onset_vhf", "onset_cnc")]) 
+
+# check negative period 
+# x$check_diff_date_contact_2 <- as.numeric(x$date_contact_confirmed_case2_end - x$date_contact_confirmed_case2)
+# summary(check_diff_date_contact_2)
+# print(x[which(check_diff_date_contact_2 < 0), c("mllid", "check_diff_date_contact_1" , "date_contact_confirmed_case1" , "date_contact_confirmed_case2_end")]) 
+# x$check_diff_date_contact_2 <- NULL
+
+comment <- "Character instead of date # inconsistent coding. To be corrected prior to check the difference"
+var_des$com[which(var_des$var =="traditonal_healer_enddate")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: contact_id3
+Var. def. :
+```{r contact_id3}
+mode(contact_id3)
+var_des$mod[which(var_des$var =="contact_id3")]   <- mode(contact_id3)
+var_des$na[which(var_des$var =="contact_id3")]    <- sum(is.na(contact_id3))
+print(paste("Percentage missing ", round(sum(is.na(contact_id3))*100/length(contact_id3),1), "%",sep=""))
+var_des$per[which(var_des$var =="contact_id3")]   <- round(sum(is.na(contact_id3))*100/length(contact_id3),1)
+
+unique(contact_id3)
+table (contact_id3,exclude = NULL)
+
+comment <- paste("Mix of name and various ID's types", sep="")
+var_des$com[which(var_des$var =="contact_id3")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: date_contact_confirmed_cas32
+Var. def. :
+```{r date_contact_confirmed_cas32}
+mode(date_contact_confirmed_cas32)
+summary(date_contact_confirmed_cas32) 
+unique(date_contact_confirmed_cas32)
+
+var_des$mod[which(var_des$var =="date_contact_confirmed_cas32")]  <- mode(date_contact_confirmed_cas32)
+var_des$na[which(var_des$var =="date_contact_confirmed_cas32")]  <- sum(is.na(date_contact_confirmed_cas32))
+print(paste("Percent date_contact_confirmed_cas32 missing ", round(sum(is.na(date_contact_confirmed_cas32))*100/length(date_contact_confirmed_cas32),1), "%",sep=""))
+var_des$per[which(var_des$var =="date_contact_confirmed_cas32")] <- round(sum(is.na(date_contact_confirmed_cas32))*100/length(date_contact_confirmed_cas32),1)
+var_des$min[which(var_des$var =="date_contact_confirmed_cas32")] <- as.character(summary(date_contact_confirmed_cas32)[[1]])
+var_des$max[which(var_des$var =="date_contact_confirmed_cas32")] <- as.character(summary(date_contact_confirmed_cas32)[[6]])
+
+DT::datatable(x[which(!is.na(date_contact_confirmed_cas32)), c("mllid", "date_contact_confirmed_cas32","onset_iso", "onset_calc", "cte_date", "onset_vhf", "onset_cnc")]) 
+
+comment <- "Name varaible not following the nomenclature"
+var_des$com[which(var_des$var =="date_contact_confirmed_cas32")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: date_contact_confirmed_case3_end
+Var. def. :
+```{r date_contact_confirmed_case3_end}
+mode(date_contact_confirmed_case3_end)
+summary(date_contact_confirmed_case3_end) # negative values 
+
+var_des$mod[which(var_des$var =="date_contact_confirmed_case3_end")]  <- mode(date_contact_confirmed_case3_end)
+var_des$na[which(var_des$var =="date_contact_confirmed_case3_end")]  <- sum(is.na(date_contact_confirmed_case3_end))
+print(paste("Percent date_contact_confirmed_case3_end missing ", round(sum(is.na(date_contact_confirmed_case3_end))*100/length(date_contact_confirmed_case3_end),1), "%",sep=""))
+var_des$per[which(var_des$var =="date_contact_confirmed_case3_end")] <- round(sum(is.na(date_contact_confirmed_case3_end))*100/length(date_contact_confirmed_case3_end),1)
+var_des$min[which(var_des$var =="date_contact_confirmed_case3_end")] <- as.character(summary(date_contact_confirmed_case3_end)[[1]])
+var_des$max[which(var_des$var =="date_contact_confirmed_case3_end")] <- as.character(summary(date_contact_confirmed_case3_end)[[6]])
+
+print(x[which(!is.na(date_contact_confirmed_case3_end)), c("mllid", "date_contact_confirmed_case3_end","onset_iso", "onset_calc", "cte_date", "onset_vhf", "onset_cnc")]) 
+
+# check negative period 
+x$check_diff_date_contact_3 <- as.numeric(date_contact_confirmed_case3_end - date_contact_confirmed_cas32)
+# summary(check_diff_date_contact_3)
+print(x[which(x$check_diff_date_contact_3 < 0), c("mllid", "check_diff_date_contact_3" , "date_contact_confirmed_case3_end" , "date_contact_confirmed_cas32")]) 
+x$check_diff_date_contact_3 <- NULL
+
+comment <- "Character instead of date # inconsistent coding. To be corrected prior to check the difference"
+var_des$com[which(var_des$var =="traditonal_healer_enddate")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: comments_eg_type_of_contact_with
+Var. def. : Open field to describe the type of contact
+```{r comments_eg_type_of_contact_with}
+mode(comments_eg_type_of_contact_with)
+var_des$mod[which(var_des$var =="comments_eg_type_of_contact_with")]  <- mode(comments_eg_type_of_contact_with)
+var_des$na[which(var_des$var =="comments_eg_type_of_contact_with")]  <- sum(is.na(comments_eg_type_of_contact_with))
+print(paste("Percentage missing ", round(sum(is.na(comments_eg_type_of_contact_with))*100/length(comments_eg_type_of_contact_with),1), "%",sep=""))
+var_des$per[which(var_des$var =="comments_eg_type_of_contact_with")] <- round(sum(is.na(comments_eg_type_of_contact_with))*100/length(comments_eg_type_of_contact_with),1)
+# unique(comments_eg_type_of_contact_with)
+
+comment <- paste("Narrative of contact", sep="")
+var_des$com[which(var_des$var =="writeupsource")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable:contact_registered
+Var. def. : Part of the list of contact. Based on slide/narrative of MoH coord.meeting. Y/N/U (Y= oui; N=non; U=unknown)
+```{r contact_registered}
+var_des$mod[which(var_des$var =="contact_registered")]  <- mode(contact_registered)
+var_des$na[which(var_des$var =="contact_registered")]  <- sum(is.na(contact_registered) | contact_registered=='unknown')
+print(paste("Percentage missing ", round(sum(is.na(contact_registered) | contact_registered=='unknown')*100/length(contact_registered),1), "%",sep=""))
+var_des$per[which(var_des$var =="contact_registered")] <- round(sum(is.na(contact_registered) | contact_registered=='unknown')*100/length(contact_registered),1)
+
+table(contact_registered, exclude= NULL)
+
+comment <- ""
+var_des$com[which(var_des$var =="contact_registered")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: contact_surveilled
+Var. def. : Part of the follow-up. Based on slide/narrative of MoH coord.meeting. Y/N/U (Y= oui; N=non; U=unknown)
+```{r contact_surveilled}
+var_des$mod[which(var_des$var =="contact_surveilled")]  <- mode(contact_surveilled)
+var_des$na[which(var_des$var =="contact_surveilled")]  <- sum(is.na(contact_surveilled) | contact_surveilled=='unknown')
+print(paste("Percentage missing ", round(sum(is.na(contact_surveilled) | contact_surveilled=='unknown')*100/length(contact_surveilled),1), "%",sep=""))
+var_des$per[which(var_des$var =="contact_surveilled")] <- round(sum(is.na(contact_surveilled) | contact_surveilled=='unknown')*100/length(contact_surveilled),1)
+
+table(contact_surveilled, exclude= NULL)
+table(contact_surveilled, contact_registered) # check database for reclassification
+
+comment <- paste("Check the croostable between contact_surveilled and contact_registered. ? change status of 12 contact not surveilled to .no. as they are reported not to be registered. ?", sep="")
+var_des$com[which(var_des$var =="contact_surveilled")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable:contact_notsurveilled_reason
+Var. def. : Open field text to register reason of absence of surveillance. This is not coming form the based of contact.
+```{r contact_notsurveilled_reason}
+var_des$mod[which(var_des$var =="contact_notsurveilled_reason")]  <- mode(contact_notsurveilled_reason)
+var_des$na[which(var_des$var =="contact_notsurveilled_reason")]  <- sum(is.na(contact_notsurveilled_reason))
+print(paste("Percentage missing ", round(sum(is.na(contact_notsurveilled_reason) & contact_surveilled=='no')*100/sum(contact_surveilled=='no'),1), "%",sep=""))
+var_des$per[which(var_des$var =="contact_notsurveilled_reason")] <- round(sum(is.na(contact_notsurveilled_reason) & contact_surveilled=='no')*100/sum(contact_surveilled=='no'),1)
+
+table(x[contact_surveilled =="unknown",]$contact_notsurveilled_reason,x[contact_surveilled =="unknown",]$contact_surveilled) # none
+table(x[contact_surveilled =="yes",]$contact_notsurveilled_reason,x[contact_surveilled =="yes",]$contact_surveilled) # irregular contact follow-up. Is this enough to reclassify into no surveilled contact
+
+comment <- paste("Check cross tables. reclassifcation possible ?", sep="")
+var_des$com[which(var_des$var =="contact_surveilled")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: contact_status
+Var. def. : 
+```{r contact_status}
+mode(contact_status)
+summary(contact_status)
+var_des$mod[which(var_des$var =="contact_status")]  <- mode(contact_status)
+var_des$na[which(var_des$var =="contact_status")]  <- sum(is.na(contact_status))
+print(paste("Percentage missing ", round(sum(is.na(contact_status))*100/length(contact_status),1), "%",sep=""))
+var_des$per[which(var_des$var =="contact_status")] <- round(sum(is.na(contact_status))*100/length(firstname),1)
+
+table(contact_status, exclude= NULL)
+table(contact_status,contact_surveilled , exclude= NULL)
+table(contact_status, contact_registered , exclude= NULL)
+table(contact_status, contact_registered , useNA = "ifany")
+
+comment <- "None"
+var_des$com[which(var_des$var =="contact_status")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: epilink_yn
+Var. def. : Presence of an epi-link.Based on slide/narrative of MoH coord.meeting.
+```{r epilink_yn}
+var_des$mod[which(var_des$var =="epilink_yn")]  <- mode(epilink_yn)
+var_des$na[which(var_des$var =="epilink_yn")]  <- sum(is.na(epilink_yn) | epilink_yn=='unknown')
+print(paste("Percentage missing ", round(sum(is.na(epilink_yn) | epilink_yn=='unknown')*100/length(epilink_yn),1), "%",sep=""))
+var_des$per[which(var_des$var =="epilink_yn")] <- round(sum(is.na(epilink_yn) | epilink_yn=='unknown')*100/length(epilink_yn),1)
+
+table(epilink_yn, exclude= NULL)
+table(epilink_yn, contact_registered) 
+
+comment <- ""
+var_des$com[which(var_des$var =="epilink_yn")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable:epi_linked_narrative
+Var. def. : Description of the epi-link
+```{r epi_linked_narrative}
+var_des$mod[which(var_des$var =="epi_linked_narrative")]  <- mode(epi_linked_narrative)
+var_des$na[which(var_des$var =="epi_linked_narrative")]  <- sum(is.na(epi_linked_narrative) & epilink_yn=='yes')
+print(paste("Percentage missing ", round(sum(is.na(epi_linked_narrative) & epilink_yn=='yes')*100/sum(epilink_yn=='yes'),1), "%",sep=""))
+var_des$per[which(var_des$var =="epi_linked_narrative")] <- round(sum(is.na(epi_linked_narrative) & epilink_yn=='yes')*100/sum(epilink_yn=='yes'),1)
+
+DT::datatable(x[which(!is.na(epilink_yn) & epilink_yn =="no" & !is.na(epi_linked_narrative)),  c("mllid","epilink_yn","epi_linked_narrative")])  
+
+comment <- paste("check if without epilink you still have a narrative, to be reclassified with an epilink", sep="")
+var_des$com[which(var_des$var =="contact_surveilled")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: attendance_at_a_funeral
+Var. def. : Case having been at a funeral.
+```{r attendance_at_a_funeral}
+mode(attendance_at_a_funeral)
+var_des$mod[which(var_des$var =="attendance_at_a_funeral")]  <- mode(attendance_at_a_funeral)
+var_des$na[which(var_des$var =="attendance_at_a_funeral")]  <- sum(is.na(attendance_at_a_funeral) | attendance_at_a_funeral=='3')
+print(paste("Percentage missing ", round(sum(is.na(attendance_at_a_funeral) | attendance_at_a_funeral=='3')*100/length(attendance_at_a_funeral),1), "%",sep=""))
+var_des$per[which(var_des$var =="attendance_at_a_funeral")] <- round(sum(is.na(attendance_at_a_funeral) | attendance_at_a_funeral=='3')*100/length(attendance_at_a_funeral),1)
+
+table(attendance_at_a_funeral,exclude = NULL)
+DT::datatable(x[which(!is.na(attendance_at_a_funeral) & !is.na(transmission_place)),  c("mllid","attendance_at_a_funeral", "transmission_place","hcw","occupation")]) 
+
+comment <- paste("Difficult to interpret, sevarl co-exposure among health care workers. Check inconsistent coding (post processing in  script)", sep="")
+var_des$com[which(var_des$var =="attendance_at_a_funeral")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: id_of_funeral_1
+Var. def. : VHF ID or name of death. funeral_1 
+```{r id_of_funeral_1}
+mode(id_of_funeral_1)
+var_des$mod[which(var_des$var =="id_of_funeral_1")] <- mode(id_of_funeral_1)
+var_des$na[which(var_des$var =="id_of_funeral_1")]  <- sum(is.na(id_of_funeral_1) & (!is.na(attendance_at_a_funeral) & (attendance_at_a_funeral!='3')))
+print(paste("Percentage missing ", round(sum(is.na(id_of_funeral_1) & (!is.na(attendance_at_a_funeral) & (attendance_at_a_funeral!='3')))*100/sum(!is.na(attendance_at_a_funeral) & (attendance_at_a_funeral!='3')),1), "%",sep=""))
+var_des$per[which(var_des$var =="id_of_funeral_1")]   <- round(sum(is.na(id_of_funeral_1) & (!is.na(attendance_at_a_funeral) & (attendance_at_a_funeral!='3')))*100/sum(!is.na(attendance_at_a_funeral) & attendance_at_a_funeral!='3'),1)
+
+mismatches <- (is.na(attendance_at_a_funeral) | attendance_at_a_funeral=='2' | attendance_at_a_funeral=='3') & !is.na(id_of_funeral_1)
+if(any(mismatches)){
+  comment <- 'some funeral IDs recorded for cases not recorded as having attended a funeral; check table; '
+  DT::datatable(x[which(mismatches),  c("mllid","attendance_at_a_funeral", "id_of_funeral_1")]) 
+} else comment <- ""
+
+comment <- paste(comment,"check ID. Incomplete but may be used to characterise transmission chains", sep="")
+var_des$com[which(var_des$var =="id_of_funeral_1")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: date_of_funeral
+Var. def. : 
+```{r Date of the funeral_1}
+mode(date_of_funeral)
+summary(date_of_funeral)
+var_des$mod[which(var_des$var =="date_of_funeral")]  <- mode(date_of_funeral)
+var_des$na[which(var_des$var =="date_of_funeral")]  <- sum(is.na(date_of_funeral) & !is.na(attendance_at_a_funeral) & attendance_at_a_funeral!='3')
+print(paste("Percentage missing ", round(sum(is.na(date_of_funeral) & !is.na(attendance_at_a_funeral) & attendance_at_a_funeral!='3')*100/sum(!is.na(attendance_at_a_funeral) & attendance_at_a_funeral!='3'),1), "%",sep=""))
+var_des$per[which(var_des$var =="date_of_funeral")] <- round(sum(is.na(date_of_funeral) & !is.na(attendance_at_a_funeral) & attendance_at_a_funeral!='3')*100/sum(!is.na(attendance_at_a_funeral) & attendance_at_a_funeral!='3'),1)
+var_des$min[which(var_des$var =="date_of_funeral")] <- as.character(min(date_of_funeral, na.rm=T))
+var_des$max[which(var_des$var =="date_of_funeral")] <- as.character(max(date_of_funeral, na.rm=T))
+
+date_of_funeral_check <- as.character(date_of_funeral)
+date_of_funeral_check[which(date_of_funeral>1)] <- "Available date"
+date_of_funeral_check[which(is.na(date_of_funeral))] <- "Missing date"
+table( attendance_at_a_funeral, date_of_funeral_check, exclude= NULL)
+
+mismatches <- (is.na(attendance_at_a_funeral) | attendance_at_a_funeral=='2' | attendance_at_a_funeral=='3') & !is.na(date_of_funeral)
+if(any(mismatches)){
+  comment <- 'some funeral dates recorded for cases not recorded as having attended a funeral; check table; '
+  DT::datatable(x[which(mismatches),  c("mllid","attendance_at_a_funeral", "date_of_funeral")]) 
+} else comment <- ""
+
+
+comment <- paste(comment, "check coding and missing date ; note that variable must be renamed to be consitent: date_of_funeral_1",sep="")
+var_des$com[which(var_des$var =="cte_date")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: id_of_funeral_2
+Var. def. : VHF ID or name of death. funeral_2 
+```{r id_of_funeral_2}
+mode(id_of_funeral_2)
+var_des$mod[which(var_des$var =="id_of_funeral_2")] <- mode(id_of_funeral_2)
+var_des$na[which(var_des$var =="id_of_funeral_2")]  <- sum(is.na(id_of_funeral_2) & (!is.na(attendance_at_a_funeral) & (attendance_at_a_funeral!='3')))
+print(paste("Percentage missing ", round(sum(is.na(id_of_funeral_2) & (!is.na(attendance_at_a_funeral) & (attendance_at_a_funeral!='3')))*100/sum(!is.na(attendance_at_a_funeral) & (attendance_at_a_funeral!='3')),1), "%",sep=""))
+var_des$per[which(var_des$var =="id_of_funeral_2")]   <- round(sum(is.na(id_of_funeral_2) & (!is.na(attendance_at_a_funeral) & (attendance_at_a_funeral!='3')))*100/sum(!is.na(attendance_at_a_funeral) & attendance_at_a_funeral!='3'),1)
+
+mismatches <- (is.na(attendance_at_a_funeral) | attendance_at_a_funeral=='2' | attendance_at_a_funeral=='3') & !is.na(id_of_funeral_2)
+if(any(mismatches)){
+  comment <- 'some funeral IDs recorded for cases not recorded as having attended a funeral; check table; '
+  DT::datatable(x[which(mismatches),  c("mllid","attendance_at_a_funeral", "id_of_funeral_2")]) 
+} else comment <- ""
+
+comment <- paste(comment,"check ID. Incomplete but may be used to characterise transmission chains", sep="")
+var_des$com[which(var_des$var =="id_of_funeral_2")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: date_of_funeral_2
+Var. def. : Date of the funeral_2
+```{r date_of_funeral_2}
+mode(date_of_funeral_2)
+summary(date_of_funeral_2)
+var_des$mod[which(var_des$var =="date_of_funeral_2")]  <- mode(date_of_funeral_2)
+var_des$na[which(var_des$var =="date_of_funeral_2")]  <- sum(is.na(date_of_funeral_2) & !is.na(attendance_at_a_funeral) & attendance_at_a_funeral!='3')
+print(paste("Percentage missing ", round(sum(is.na(date_of_funeral_2) & !is.na(attendance_at_a_funeral) & attendance_at_a_funeral!='3')*100/sum(!is.na(attendance_at_a_funeral) & attendance_at_a_funeral!='3'),1), "%",sep=""))
+var_des$per[which(var_des$var =="date_of_funeral_2")] <- round(sum(is.na(date_of_funeral_2) & !is.na(attendance_at_a_funeral) & attendance_at_a_funeral!='3')*100/sum(!is.na(attendance_at_a_funeral) & attendance_at_a_funeral!='3'),1)
+var_des$min[which(var_des$var =="date_of_funeral_2")] <- as.character(min(date_of_funeral_2, na.rm=T))
+var_des$max[which(var_des$var =="date_of_funeral_2")] <- as.character(max(date_of_funeral_2, na.rm=T)) 
+
+date_of_funeral_2_check <- as.character(date_of_funeral_2)
+date_of_funeral_2_check[which(date_of_funeral_2>1)] <- "Available date"
+date_of_funeral_2_check[which(is.na(date_of_funeral_2))] <- "Missing date"
+table( attendance_at_a_funeral, date_of_funeral_2_check, exclude= NULL)
+
+mismatches <- (is.na(attendance_at_a_funeral) | attendance_at_a_funeral=='2' | attendance_at_a_funeral=='3') & !is.na(date_of_funeral_2)
+if(any(mismatches)){
+  comment <- 'some funeral dates recorded for cases not recorded as having attended a funeral; check table; '
+  DT::datatable(x[which(mismatches),  c("mllid","attendance_at_a_funeral", "date_of_funeral_2")]) 
+} else comment <- ""
+
+comment <- paste(comment, "check coding and missing date", sep="")
+var_des$com[which(var_des$var =="cte_date")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+
+
+## Important dates
+
+
+### Variable:date of onset
+Var. def. : date of onset of EVD case [derived variable R script]. Equivalent of onset_calc (which is derived from an automatic formula in the Google sheet (xls formula in the data entry sheet: 
+if  "Onset_cnc" is empty take "Onset_vhf" otherwise "Onset_CNC")
+
+```{r date_onset}
+mode(date_onset)
+var_des$mod[which(var_des$var =="date_onset")]  <- mode(date_onset)
+var_des$na[which(var_des$var =="date_onset")] <- sum(is.na(date_onset))
+print(paste("Percentdate_onset missing ", round(sum(is.na(date_onset))*100/length(date_onset),1), "%",sep=""))
+var_des$per[which(var_des$var =="date_onset")] <- round(sum(is.na(date_onset))*100/length(date_onset),1)
+var_des$min[which(var_des$var =="date_onset")] <- as.character(summary(date_onset)[[1]])
+var_des$max[which(var_des$var =="date_onset")] <- as.character(summary(date_onset)[[6]])
+
+#visualize missing onset dates over time
+date_onset_check <- as.character(date_onset)
+date_onset_check[which(date_onset>1)] <- "Available date"
+date_onset_check[which(is.na(date_onset))] <- "Missing date"
+table(statut,date_onset_check,  exclude=NULL)
+monthly <- table(month_report, date_onset_check, exclude=NULL)
+monthly
+if(any(is.na(date_onset))) {
+  monthly_df <- as.data.frame(monthly)
+  monthly_df <- monthly_df[1:(nrow(monthly_df)/2),]
+  monthly_df$percent <- monthly[,2]/(monthly[,1]+monthly[,2])*100
+  ggplot(monthly_df)+
+    geom_path(aes(y=percent, x=as.Date(month_report)), lwd=1)+
+    theme_bw() +
+    large_txt + rotate_x_text(45) +
+    labs(title = "Missing onset dates per month",
+         x = "",
+         y = "Percent missing")
+
+  most_missing <- monthly_df$month_report[which(monthly_df$percent>2)]
+
+  comment <- paste("At least 2% of onset dates missing in the following months: ", paste(most_missing, collapse=', '), sep='')
+  var_des$com[which(var_des$var =="date_onset")] <- comment
+} else {
+  comment <- 'No missing onset dates'
+  var_des$com[which(var_des$var =="date_onset")] <- comment
+}
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: date_report 
+Var. def. : date of report of EVD case [derived variable R script]
+
+```{r date_report}
+mode(date_report)
+
+var_des$mod[which(var_des$var =="date_report")]  <- mode(date_report)
+var_des$na[which(var_des$var =="date_report")]  <- sum(is.na(date_report))
+print(paste("Percentage missing ", round(sum(is.na(date_report))*100/length(date_report),1), "%",sep=""))
+var_des$per[which(var_des$var =="date_report")] <- round(sum(is.na(date_report))*100/length(date_report),1)
+var_des$min[which(var_des$var =="date_report")] <- as.character(summary(date_report)[[1]])
+var_des$max[which(var_des$var =="date_report")] <- as.character(summary(date_report)[[6]])
+
+#visualize missing report dates over time
+date_report_check <- as.character(date_report)
+date_report_check[which(date_report>1)] <- "Available date"
+date_report_check[which(is.na(date_report))] <- "Missing date"
+table(statut,date_report_check,  exclude=NULL)
+monthly <- table(month_report, date_report_check, exclude=NULL)
+monthly
+monthly_df <- as.data.frame(monthly)
+if(any(is.na(date_report))) {
+  monthly_df <- monthly_df[1:(nrow(monthly_df)/2),]
+  monthly_df$percent <- monthly[,2]/(monthly[,1]+monthly[,2])*100
+  ggplot(monthly_df)+
+    geom_path(aes(y=percent, x=as.Date(month_report)), lwd=1)+
+    theme_bw() +
+    large_txt + rotate_x_text(45) +
+    labs(title = "Missing report dates per month",
+         x = "",
+         y = "Percent missing")
+
+  most_missing <- monthly_df$month_report[which(monthly_df$percent>2)]
+  
+  comment <- paste("At least 2% of report dates missing in the following months: ", paste(most_missing, collapse=', '), sep='')
+  var_des$com[which(var_des$var =="date_report")] <- comment
+} else {
+  comment <- 'No missing report dates'
+  var_des$com[which(var_des$var =="date_report")] <- comment
+}
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable:  date_admission
+Var. def. : date of admission of the EVD patient the CT/CTE [derived variable R script]
+
+```{r date_admis}
+mode(date_admission)
+admitted <- !is.na(patient_site_id) | !is.na(cte_date) | !is.na(date_admission)
+
+var_des$mod[which(var_des$var =="date_admission")]  <- mode(date_admission)
+var_des$na[which(var_des$var =="date_admission")]  <- sum(is.na(date_admission) & admitted)
+print(paste("Percentage missing ", round(sum(is.na(date_admission) & admitted)*100/length(which(admitted)),1), "%",sep=""))
+var_des$per[which(var_des$var =="date_admission")] <- round(sum(is.na(date_admission) & admitted)*100/length(which(admitted)),1)
+var_des$min[which(var_des$var =="date_admission")] <- as.character(min(date_admission, na.rm=T))
+var_des$max[which(var_des$var =="date_admission")] <- as.character(max(date_admission, na.rm=T))
+
+if(any(date_admission != cte_date, na.rm=T)){
+  comment <- 'some date_admission values do not match cte_date values; '
+} else comment <- ''
+
+mismatches <- !is.na(date_admission) & is.na(patient_site_id)
+mismatches <- mismatches | (is.na(date_admission) & place_of_death=='etc')
+mismatches <- mismatches | (!is.na(date_admission) & number_hcf==0)
+
+if(any(mismatches)) {
+  comment <- paste(comment, 'some patients have mismatches between date_admission and place_of_death/patient_side_id/number_hcf; check table; ', sep='')
+  DT::datatable(x[which(mismatches),  c("mllid","date_admission", "patient_site_id", "place_of_death", "number_hcf")])
+}
+
+timeline_mismatches <- date_admission < date_onset
+timeline_mismatches <- timeline_mismatches | (date_death < date_admission)
+if(any(timeline_mismatches)){
+  comment <- paste(comment, 'some admissions timelines do not make sense; check table; ', sep='')
+  DT::datatable(x[which(timeline_mismatches),  c("mllid","date_admission", "date_death", "date_onset", "date_report")])
+}
+
+var_des$com[which(var_des$var =="date_admission")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: cte_date 
+Var. def. : date of admission at the CTE
+```{r cte_date}
+mode(cte_date)
+var_des$mod[which(var_des$var =="cte_date")]  <- mode(cte_date)
+var_des$na[which(var_des$var =="cte_date")]  <- sum(is.na(cte_date) & admitted)
+print(paste("Percentage missing ", round(sum(is.na(cte_date) & admitted)*100/length(which(admitted)),1), "%",sep=""))
+var_des$per[which(var_des$var =="cte_date")] <- round(sum(is.na(cte_date) & admitted)*100/length(which(admitted)),1)
+var_des$min[which(var_des$var =="cte_date")] <- as.character(min(cte_date, na.rm=TRUE))
+var_des$max[which(var_des$var =="cte_date")] <- as.character(max(cte_date, na.rm=TRUE))
+
+if(any(date_admission != cte_date, na.rm=T)){
+  comment <- 'some date_admission values do not match cte_date values; check date_admission for any other comments'
+} else comment <- 'check date_admission for any comments'
+
+var_des$com[which(var_des$var =="cte_date")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: date_death
+Var. def. : date of death of an EVD patient [derived variable R script]
+```{r datedeath}
+mode(date_death)
+var_des$mod[which(var_des$var =="date_death")]  <- mode(date_death)
+var_des$na[which(var_des$var =="date_death")]  <- sum(is.na(date_death) & final_outcome=='dead')
+print(paste("Percentage missing ", round(sum(is.na(date_death) & final_outcome=='dead')*100/length(which(final_outcome=='dead')),1), "%",sep=""))
+var_des$per[which(var_des$var =="date_death")] <- round(sum(is.na(date_death) & final_outcome=='dead')*100/length(which(final_outcome=='dead')),1)
+var_des$min[which(var_des$var =="date_death")] <- as.character(min(date_death, na.rm=TRUE))
+var_des$max[which(var_des$var =="date_death")] <- as.character(max(date_death, na.rm=TRUE))
+
+mismatches <- !is.na(date_death) & (final_outcome !='dead' | outcome !='dead' | current_status != 'dead')
+if(any(mismatches)) {
+  comment <- paste('some patients have death dates but are not recorded as dead; check table; ', sep='')
+  DT::datatable(x[which(mismatches),  c("mllid","date_death", "place_of_death", "final_outcome", "outcome", "current_status")])
+} else comment <- ""
+
+timeline_mismatches <- date_death < date_onset
+timeline_mismatches <- timeline_mismatches | (date_death < date_exposure_start)
+timeline_mismatches <- timeline_mismatches | (date_death < date_exposure_end)
+
+if(any(timeline_mismatches)){
+  comment <- paste(comment, 'some deaths recorded as occuring before onset or exposure; check table; ', sep='')
+  DT::datatable(x[which(timeline_mismatches),  c("mllid", "date_death", "date_onset", "date_admission", "date_report", "date_exposure_end", "date_exposure_start")])
+}
+
+var_des$com[which(var_des$var =="date_death")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: date_exposure_start
+Var. def. : date of exposure START date  [derived variable R script]
+```{r dateexpostart}
+mode(date_exposure_start)
+var_des$mod[which(var_des$var =="date_exposure_start")]  <- mode(date_exposure_start)
+var_des$na[which(var_des$var =="date_exposure_start")]  <- sum(is.na(date_exposure_start))
+print(paste("Percentage missing ", round(sum(is.na(date_exposure_start))*100/length(date_exposure_start),1), "%",sep=""))
+var_des$per[which(var_des$var =="date_exposure_start")] <- round(sum(is.na(date_exposure_start))*100/length(date_exposure_start),1)
+var_des$min[which(var_des$var =="date_exposure_start")] <- as.character(min(date_exposure_start, na.rm=TRUE))
+var_des$max[which(var_des$var =="date_exposure_start")] <- as.character(max(date_exposure_start, na.rm=TRUE))
+
+timeline_mismatches <- date_exposure_start > date_exposure_end
+timeline_mismatches <- timeline_mismatches | (date_onset < date_exposure_start)
+timeline_mismatches <- timeline_mismatches | (date_death < date_exposure_start)
+timeline_mismatches <- timeline_mismatches | (date_admission < date_exposure_start)
+
+if(any(timeline_mismatches)){
+  comment <- 'some exposures recorded as occuring after onset or death; check table'
+  DT::datatable(x[which(timeline_mismatches),  c("mllid", "date_death", "date_onset", "date_admission", "date_report", "date_exposure_end", "date_exposure_start")])
+} else comment <- ""
+var_des$com[which(var_des$var =="date_exposure_start")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: date_exposure_end
+Var. def. : date of exposure END date [derived variable R script]
+```{r dateexpoend}
+mode(date_exposure_end)
+var_des$mod[which(var_des$var =="date_exposure_end")]  <- mode(date_exposure_end)
+var_des$na[which(var_des$var =="date_exposure_end")]  <- sum(is.na(date_exposure_end))
+print(paste("Percentage missing ", round(sum(is.na(date_exposure_end))*100/length(date_exposure_end),1), "%",sep=""))
+var_des$per[which(var_des$var =="date_exposure_end")] <- round(sum(is.na(date_exposure_end))*100/length(date_exposure_end),1)
+var_des$min[which(var_des$var =="date_exposure_end")] <- as.character(min(date_exposure_end, na.rm=TRUE))
+var_des$max[which(var_des$var =="date_exposure_end")] <- as.character(max(date_exposure_end, na.rm=TRUE))
+
+timeline_mismatches <- date_exposure_start > date_exposure_end
+timeline_mismatches <- timeline_mismatches | (date_onset < date_exposure_end)
+timeline_mismatches <- timeline_mismatches | (date_death < date_exposure_end)
+timeline_mismatches <- timeline_mismatches | (date_admission < date_exposure_end)
+
+if(any(timeline_mismatches)){
+  comment <- 'some exposures recorded as occuring after onset or death; check table; '
+  DT::datatable(x[which(timeline_mismatches),  c("mllid", "date_death", "date_onset", "date_admission", "date_report", "date_exposure_end", "date_exposure_start")])
+} else comment <- ""
+
+comment <- paste(comment, paste("number of complete pairs (date_exposure_start and date_exposure_end): ", sum(!is.na(date_exposure_end - date_exposure_start)),sep=""), sep=".")
+var_des$com[which(var_des$var =="date_exposure_end")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: epiweek_report
+Var. def. : Week of report, date format
+```{r epiweek_report}
+mode(epiweek_report)
+var_des$mod[which(var_des$var =="epiweek_report")]  <- mode(epiweek_report)
+var_des$na[which(var_des$var =="epiweek_report")]  <- sum(is.na(epiweek_report))
+print(paste("Percentage missing: ", round(sum(is.na(epiweek_report))*100/length(epiweek_report),1), "%",sep=""))
+var_des$per[which(var_des$var =="epiweek_report")] <- round(sum(is.na(epiweek_report))*100/length(firstname),1)
+
+unique(epiweek_report)
+#TODO: check that these correspond to report weeks
+
+comment <- ""
+var_des$com[which(var_des$var =="epiweek_report")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: epiweek_report_label
+Var. def. : Week of report, date format. Label for figure.
+```{r epiweek_report_label}
+var_des$mod[which(var_des$var =="epiweek_report_label")]  <- mode(epiweek_report_label)
+var_des$na[which(var_des$var =="epiweek_report_label")]  <- sum(is.na(epiweek_report_label))
+print(paste("Percentage missing: ", round(sum(is.na(epiweek_report_label))*100/length(epiweek_report_label),1), "%",sep=""))
+var_des$per[which(var_des$var =="epiweek_report_label")] <- round(sum(is.na(epiweek_report_label))*100/length(firstname),1)
+
+unique(epiweek_report_label)
+
+comment <- ""
+var_des$com[which(var_des$var =="epiweek_report_label")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: epiweek_onset
+Var. def. : Week of onset
+```{r epiweek_onset}
+var_des$mod[which(var_des$var =="epiweek_onset")]  <- mode(epiweek_onset)
+var_des$na[which(var_des$var =="epiweek_onset")]  <- sum(is.na(epiweek_onset))
+print(paste("Percentage missing ", round(sum(is.na(epiweek_onset))*100/length(epiweek_onset),1), "%",sep=""))
+var_des$per[which(var_des$var =="epiweek_onset")] <- round(sum(is.na(epiweek_onset))*100/length(firstname),1)
+table(epiweek_onset, exclude= NULL)
+
+unique(epiweek_onset)
+
+DT::datatable(x[which(epiweek_onset =="1899-W52"), c("mllid","month_onset","epiweek_onset", "date_onset" , "onset_vhf" , "onset_cnc" , "onset_calc" , "reportdate_cnc" , "reportdate_vhf" )])
+length(which(epiweek_onset =="1899-W52"))
+
+comment <- paste("Missing onset  wrongly coded as 1899-W52. Corresponds to missing data: ", length(which(epiweek_onset =="1899-W52")), sep="")
+var_des$com[which(var_des$var =="epiweek_onset")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: epiweek_onset_label
+Var. def. : Week of onset (label for ggplot)
+```{r epiweek_onset_label}
+mode(epiweek_onset_label)
+var_des$mod[which(var_des$var =="epiweek_onset_label")]  <- mode(epiweek_onset_label)
+var_des$na[which(var_des$var =="epiweek_onset_label")]  <- sum(is.na(epiweek_onset_label))
+print(paste("Percentage missing ", round(sum(is.na(epiweek_onset_label))*100/length(epiweek_onset_label),1), "%",sep=""))
+var_des$per[which(var_des$var =="epiweek_onset_label")] <- round(sum(is.na(epiweek_onset_label))*100/length(firstname),1)
+
+unique(epiweek_onset_label)
+
+comment <- "1899-W52 label due missing date of onset"
+var_des$com[which(var_des$var =="epiweek_onset_label")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: month_report
+Var. def. : First day of the month of report date
+```{r month_report}
+var_des$mod[which(var_des$var =="month_report")]  <- mode(month_report)
+var_des$na[which(var_des$var =="month_report")]  <- sum(is.na(month_report))
+print(paste("Percentage missing ", round(sum(is.na(month_report))*100/length(month_report),1), "%",sep=""))
+var_des$per[which(var_des$var =="month_report")] <- round(sum(is.na(month_report))*100/length(firstname),1)
+
+unique(month_report)
+table(month_report, statut, exclude= NULL)
+
+comment <- "None"
+var_des$com[which(var_des$var =="month_report")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: month_onset
+Var. def. : First day of the month of onset date
+```{r month_onset}
+mode(month_onset)
+var_des$mod[which(var_des$var =="month_onset")]  <- mode(month_onset)
+var_des$na[which(var_des$var =="month_onset")]  <- sum(is.na(month_onset))
+print(paste("Percentage missing ", round(sum(is.na(month_onset))*100/length(month_onset),1), "%",sep=""))
+var_des$per[which(var_des$var =="month_onset")] <- round(sum(is.na(month_onset))*100/length(firstname),1)
+
+table(month_onset, statut, exclude= NULL)
+DT::datatable(x[which(month_onset =="1899-12-01"), c("mllid","month_onset","epiweek_onset", "date_onset" , "onset_vhf" , "onset_cnc" , "onset_calc" , "reportdate_cnc" , "reportdate_vhf" )])
+length(which(month_onset =="1899-12-01"))
+
+comment <- paste("Missing onset wrongly coded. Corresponds to missing data: ", length(which(month_onset =="1899-12-01")), sep="")
+var_des$com[which(var_des$var =="month_onset")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: reporting_delay
+Var. def. : reporting delay
+```{r reporting_delay}
+mode(reporting_delay)
+summary(reporting_delay)
+var_des$mod[which(var_des$var =="reporting_delay")]  <- mode(reporting_delay)
+var_des$na[which(var_des$var =="reporting_delay")]  <- sum(is.na(reporting_delay))
+print(paste("Percentage missing ", round(sum(is.na(reporting_delay))*100/length(reporting_delay),1), "%",sep=""))
+var_des$per[which(var_des$var =="reporting_delay")] <- round(sum(is.na(reporting_delay))*100/length(reporting_delay),1)
+var_des$min[which(var_des$var =="reporting_delay")]  <- min(reporting_delay, na.rm=TRUE)
+var_des$max[which(var_des$var =="reporting_delay")]  <- max(reporting_delay, na.rm=TRUE)
+
+#  check for outliers
+
+DT::datatable(x[which(reporting_delay > 40 | reporting_delay < 0),  c("mllid","reporting_delay","date_report","date_onset", "onset_cnc" ,"onset_vhf","onset_calc","date_admission" )])  
+
+comment <- "Check negative and delays over 40 days (see table)"
+var_des$com[which(var_des$var =="reporting_delay")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: delay_admission
+Var. def. : delay to admission
+```{r delay_admission}
+mode(delay_admission)
+summary(delay_admission)
+var_des$mod[which(var_des$var =="delay_admission")]  <- mode(delay_admission)
+var_des$na[which(var_des$var =="delay_admission")]  <- sum(is.na(delay_admission) & !is.na(date_admission))
+print(paste("Percentage missing ", round(sum(is.na(delay_admission) & !is.na(date_admission))*100/sum(!is.na(date_admission)),1), "%",sep=""))
+var_des$per[which(var_des$var =="delay_admission")] <- round(sum(is.na(delay_admission) & !is.na(date_admission))*100/sum(!is.na(date_admission)),1)
+
+summary(delay_admission)
+
+#  check for outliers
+DT::datatable(x[which(delay_admission<0 | delay_admission > 21),  c("mllid","delay_admission","date_admission", "date_onset", "onset_cnc" ,"onset_vhf","onset_calc","date_report" )])  
+
+comment <- "Check negative and delays over 21 days"
+var_des$com[which(var_des$var =="delay_admission")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: onset_calc
+Var. def. : 
+```{r onset_calc}
+mode(onset_calc)
+var_des$mod[which(var_des$var =="onset_calc")]  <- mode(onset_calc)
+var_des$na[which(var_des$var =="onset_calc")]  <- sum(is.na(onset_calc))
+print(paste("Percent onset_calc missing ", round(sum(is.na(onset_calc))*100/length(onset_calc),1), "%",sep=""))
+var_des$per[which(var_des$var =="onset_calc")] <- round(sum(is.na(onset_calc))*100/length(onset_calc),1)
+var_des$min[which(var_des$var =="onset_calc")] <- as.character(min(onset_calc, na.rm=T))
+var_des$max[which(var_des$var =="onset_calc")] <- as.character(max(onset_calc, na.rm=T))
+
+onset_calc_check <- as.character(onset_calc)
+onset_calc_check[which(onset_calc>1)] <- "Available date"
+onset_calc_check[which(is.na(onset_calc))] <- "Missing date"
+
+table(statut,onset_calc_check,  exclude=NULL)
+table(month_report,onset_calc_check,exclude=NULL) 
+DT::datatable(x[which(onset_calc < "2018-01-01"), c("mllid","onset_vhf", "onset_cnc","onset_calc")]) 
+
+comment <- "Check coding as 1899-12-31"
+var_des$com[which(var_des$var =="onset_calc")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: deathdischargedate
+Var. def. : 
+```{r deathdischargedate}
+mode(deathdischargedate)
+summary(deathdischargedate)
+var_des$mod[which(var_des$var =="deathdischargedate")]  <- mode(deathdischargedate)
+var_des$na[which(var_des$var =="deathdischargedate")]  <- sum(is.na(deathdischargedate) & sum(is.na(deathdischargedate) & (final_outcome=='dead' | is.na(final_outcome))))
+print(paste("Percentage missing ", round(sum(is.na(deathdischargedate) & (final_outcome=='dead' | is.na(final_outcome)))*100/sum(final_outcome=='dead' | is.na(final_outcome)),1), "%",sep=""))
+var_des$per[which(var_des$var =="deathdischargedate")] <- round(sum(is.na(deathdischargedate) & (final_outcome=='dead' | is.na(final_outcome)))*100/sum(final_outcome=='dead' | is.na(final_outcome)),1)
+var_des$min[which(var_des$var =="deathdischargedate")] <- min(deathdischargedate, na.rm=T)
+var_des$max[which(var_des$var =="deathdischargedate")] <- max(deathdischargedate, na.rm=T)
+
+var_des$com[which(var_des$var =="deathdischargedate")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable:onset_iso
+Var. def. : Time in days between the date of onset of symptoms ("Onset_Calc") and the date of isolation in CTE ("CTE_date"). Calculated in the excel sheet.
+```{r onset_iso}
+mode(onset_iso)
+summary(onset_iso) # ! negative values
+
+var_des$mod[which(var_des$var =="onset_iso")]  <- mode(onset_iso)
+var_des$na[which(var_des$var =="onset_iso")]  <- sum(is.na(onset_iso))
+print(paste("Percent onset_iso missing ", round(sum(is.na(onset_iso))*100/length(onset_iso),1), "%",sep=""))
+var_des$per[which(var_des$var =="onset_iso")] <- round(sum(is.na(onset_iso))*100/length(onset_iso),1)
+var_des$min[which(var_des$var =="onset_iso")] <- as.character(summary(onset_iso)[[1]])
+var_des$max[which(var_des$var =="onset_iso")] <- as.character(summary(onset_iso)[[6]])
+
+
+extremes <- onset_iso > 300 | onset_iso < 0
+if(any(extremes)){
+  DT::datatable(x[which(extremes), c("mllid", "onset_iso","onset_calc", "cte_date", "onset_vhf", "onset_cnc")]) 
+  comment <- paste(sum(extremes), ' onset_iso differences are unusual (either <0 or >300 days); see table', sep='')
+} else comment <- ''
+
+var_des$com[which(var_des$var =="onset_iso")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: onset_report
+Var. def. : Time in days between the date of onset of symptoms ("Onset_Calc") and the date of report to the national coordination ("ReportDate_CNC") . 
+```{r onset_report}
+mode(onset_report)
+summary(onset_report) # negative values
+
+var_des$mod[which(var_des$var =="onset_report")]  <- mode(onset_report)
+var_des$na[which(var_des$var =="onset_report")]  <- sum(is.na(onset_report))
+print(paste("Percent onset_report missing ", round(sum(is.na(onset_report))*100/length(onset_report),1), "%",sep=""))
+var_des$per[which(var_des$var =="onset_report")] <- round(sum(is.na(onset_report))*100/length(onset_report),1)
+var_des$min[which(var_des$var =="onset_report")] <- min(onset_report, na.rm=T)
+var_des$max[which(var_des$var =="onset_report")] <- max(onset_report, na.rm=T)
+
+extremes <- onset_report > 300 | onset_report < 0
+if(any(extremes)){
+  DT::datatable(x[which(extremes), c("mllid", "onset_iso","onset_calc", "cte_date", "onset_vhf", "onset_cnc")]) 
+  comment <- paste(sum(extremes), ' onset_report differences are unusual (either <0 or >300 days); see table', sep='')
+} else comment <- ''
+
+var_des$com[which(var_des$var =="onset_report")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+## Outcome
+
+### Variable: final_outcome
+Var. def. : case status report intially provided by WHO HQ. Expected to be incomplete.
+```{r final_outcome}
+mode(final_outcome)
+var_des$mod[which(var_des$var =="final_outcome")]  <- mode(final_outcome)
+var_des$na[which(var_des$var =="final_outcome")]  <- sum(is.na(final_outcome) | final_outcome=='unknown')
+print(paste("Percentage missing ", round(sum(is.na(final_outcome) | final_outcome=='unknown')*100/length(final_outcome),1), "%",sep=""))
+var_des$per[which(var_des$var =="final_outcome")] <- round(sum(is.na(final_outcome) | final_outcome=='unknown')*100/length(final_outcome),1)
+
+table(final_outcome, epicasedef) #all probable cases should be dead
+living_probables <- which(epicasedef=='probable' & final_outcome %in% c('alive', 'unknown'))
+if(length(living_probables) > 0) {
+  comment <- paste(length(living_probables), ' probable cases have final_outcome either alive or unknown; ', sep='')
+} else comment <- ""
+
+
+#temporarily set NAs to 'unknown'
+report_status[which(is.na(report_status))] <- 'inconnu'
+outcome[which(is.na(outcome))] <- 'unknown'
+final_outcome[which(is.na(final_outcome))] <- 'unknown'
+current_status[which(is.na(current_status))] <- 'unknown'
+comment <- paste(comment, 'make sure that all NAs in final_outcome, outcome, report_status, and current_status are set to unknown/inconnu as appropriate; ', sep='')
+
+table(final_outcome, current_status)
+mismatches <- ((current_status=='dead' & final_outcome=='alive') | (current_status %in% c('alive', 'survived') & final_outcome=='dead') |
+                      (current_status=='unknown' & final_outcome!='unknown') | (current_status!='unknown' & final_outcome=='unknown'))
+
+table(final_outcome, report_status)  
+mismatches <- mismatches | (report_status=='dead' & final_outcome=='alive')
+
+table(final_outcome, outcome)  
+mismatches <- mismatches | ((outcome=='dead' & final_outcome=='alive') | (outcome=='recovered' & final_outcome=='dead') |
+                      (outcome=='unknown' & final_outcome!='unknown') | (outcome!='unknown' & final_outcome=='unknown'))
+
+if(any(mismatches)) {
+  comment <- paste(comment, 'some outcomes may be mismatched; see table', sep='')
+  DT::datatable(x[which(mismatches), c("mllid","current_status", "final_outcome","outcome", "report_status", "epicasedef")]) 
+}
+
+var_des$com[which(var_des$var =="final_outcome")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: outcome
+Var. def. : 
+```{r outcome}
+mode(outcome)
+var_des$mod[which(var_des$var =="outcome")]  <- mode(outcome)
+var_des$na[which(var_des$var =="outcome")]  <- sum(is.na(outcome) | outcome=='unknown')
+print(paste("Percentage missing ", round(sum(is.na(outcome) | outcome=='unknown')*100/length(outcome),1), "%",sep=""))
+var_des$per[which(var_des$var =="outcome")] <- round(sum(is.na(outcome) | outcome=='unknown')*100/length(firstname),1)
+
+
+table(outcome, epicasedef) #all probable cases should be dead
+living_probables <- which(epicasedef=='probable' & outcome %in% c('recovered', 'unknown'))
+if(length(living_probables) > 0) {
+  comment <- paste(length(living_probables), ' probable cases have outcome either recovered or unknown; ', sep='')
+} else comment <- ""
+
+table(outcome, current_status)
+mismatches <- ((current_status=='dead' & outcome=='recovered') | (current_status %in% c('alive', 'survived') & outcome=='dead') |
+                      (current_status=='unknown' & outcome!='unknown') | (current_status!='unknown' & outcome=='unknown'))
+
+table(outcome, report_status)  
+mismatches <- mismatches | (report_status=='dead' & outcome=='recovered')
+
+table(final_outcome, outcome)  
+mismatches <- mismatches | ((outcome=='dead' & final_outcome=='alive') | (outcome=='recovered' & final_outcome=='dead') |
+                      (outcome=='unknown' & final_outcome!='unknown') | (outcome!='unknown' & final_outcome=='unknown'))
+
+if(any(mismatches)) {
+  comment <- paste(comment, 'some outcomes may be mismatched; see table', sep='')
+  DT::datatable(x[which(mismatches), c("mllid","current_status", "final_outcome","outcome", "report_status", "epicasedef")]) 
+}
+
+var_des$com[which(var_des$var =="outcome")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: current_status
+Var. def. : 
+```{r current_status}
+mode(current_status)
+var_des$mod[which(var_des$var =="current_status")]  <- mode(current_status)
+var_des$na[which(var_des$var =="current_status")]  <- sum(is.na(current_status) | current_status=='unknown')
+print(paste("Percentage missing ", round(sum(is.na(current_status) | current_status=='unknown')*100/length(current_status),1), "%",sep=""))
+var_des$per[which(var_des$var =="current_status")] <- round(sum(is.na(current_status) | current_status=='unknown')*100/length(firstname),1)
+
+
+table(current_status, epicasedef) #all probable cases should be dead
+living_probables <- which(epicasedef=='probable' & current_status %in% c('survived', 'alive', 'unknown'))
+if(length(living_probables) > 0) {
+  comment <- paste(length(living_probables), ' probable cases have current_status either survived, alive, or unknown; ', sep='')
+} else comment <- ""
+
+table(outcome, current_status)
+mismatches <- ((current_status=='dead' & outcome=='recovered') | (current_status %in% c('alive', 'survived') & outcome=='dead') |
+                 (current_status=='unknown' & outcome!='unknown') | (current_status!='unknown' & outcome=='unknown'))
+
+table(current_status, report_status)  
+mismatches <- mismatches | (report_status=='dead' & current_status %in% c('survived', 'alive', 'unknown'))
+
+table(final_outcome, current_status)  
+mismatches <- mismatches | ((current_status=='dead' & final_outcome=='alive') | (current_status %in% c('unknown', 'survived', 'alive') & final_outcome=='dead') |
+                              (current_status=='unknown' & final_outcome!='unknown') | (current_status!='unknown' & final_outcome=='unknown'))
+
+if(any(mismatches)) {
+  comment <- paste(comment, 'some outcomes may be mismatched; see table', sep='')
+  DT::datatable(x[which(mismatches), c("mllid","current_status", "final_outcome","outcome", "report_status", "epicasedef")]) 
+}
+
+var_des$com[which(var_des$var =="current_status")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+
+### Variable: report_status
+Var. def. : case status at report; identical to statusreport_mdc.
+```{r report_status}
+mode(report_status)
+var_des$mod[which(var_des$var =="report_status")]  <- mode(report_status)
+var_des$na[which(var_des$var =="report_status")]  <- sum(is.na(report_status) | report_status=='inconnu')
+print(paste("Percentage missing ", round(sum(is.na(report_status) | report_status=='inconnu')*100/length(report_status),1), "%",sep=""))
+var_des$per[which(var_des$var =="report_status")] <- round(sum(is.na(report_status) | report_status=='inconnu')*100/length(firstname),1)
+
+table(report_status, current_status)
+mismatches <- (current_status %in% c('alive', 'survived','unknown') & report_status=='dead')
+
+table(outcome, report_status)  
+mismatches <- mismatches | (report_status=='dead' & outcome %in% c('recovered','unknown'))
+
+table(final_outcome, report_status)  
+mismatches <- mismatches | (report_status=='dead' & final_outcome %in% c('unknown', 'alive'))
+
+table(report_status, final_outcome)  
+mismatches <- mismatches | (report_status=='dead' & final_outcome %in% c('alive', 'unknown'))
+
+if(any(mismatches)) {
+  comment <- paste('some outcomes may be mismatched; see table', sep='')
+  DT::datatable(x[which(mismatches), c("mllid","current_status", "final_outcome","outcome", "report_status", "epicasedef")]) 
+} else comment <- ''
+
+var_des$com[which(var_des$var =="report_status")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: statusreport_mdc
+Var. def. : case status report intially provided by WHO HQ. Expected to be incomplete. Should be identical to report_status.
+
+```{r statusreport_mdc}
+mode(statusreport_mdc)
+var_des$mod[which(var_des$var =="statusreport_mdc")]  <- mode(statusreport_mdc)
+var_des$na[which(var_des$var =="statusreport_mdc")]  <- sum(is.na(statusreport_mdc) | 'statusreport_mdc'=='inconnu')
+print(paste("Percentage missing ", round(sum(is.na(statusreport_mdc) | 'statusreport_mdc'=='inconnu')*100/length(statusreport_mdc),1), "%",sep=""))
+var_des$per[which(var_des$var =="statusreport_mdc")] <- round(sum(is.na(statusreport_mdc) | 'statusreport_mdc'=='inconnu')*100/length(statusreport_mdc),1)
+
+statusreport_mdc[which(is.na(statusreport_mdc))] <- 'inconnu'
+
+mismatches <- statusreport_mdc!=report_status
+
+if(any(mismatches)) {
+  comment <- 'some statusreport_mdc do not match report_status; check these values and any other conflicts presented under report_status'
+} else comment <- ''
+
+var_des$com[which(var_des$var =="statusreport_mdc")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: statut
+Var. def. : statut EVD case (lab.)
+```{r statut}
+mode(statut)
+var_des$mod[which(var_des$var =="statut")]  <- mode(statut)
+var_des$na[which(var_des$var =="statut")]  <- sum(is.na(statut))
+print(paste("Percentage missing ", round(sum(is.na(statut))*100/length(statut),1), "%",sep=""))
+var_des$per[which(var_des$var =="statut")] <- round(sum(is.na(statut))*100/length(statut),1)
+
+table(statut, epicasedef) 
+mismatches <- (statut=='confirmed' & epicasedef !='confirmed') | (statut=='probable' & epicasedef != 'probable')
+
+if(any(mismatches, na.rm=TRUE)){
+  comment <- 'some statut and epicasedef are mismatched'
+  DT::datatable(x[which(mismatches), c("mllid","statut", "epicasedef")]) 
+} else comment <- ''
+  
+var_des$com[which(var_des$var =="statut")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: place_of_death
+Var. def. : 
+```{r place_of_death}
+mode(place_of_death)
+var_des$mod[which(var_des$var =="place_of_death")]  <- mode(place_of_death)
+var_des$na[which(var_des$var =="place_of_death")]  <- sum(is.na(place_of_death) | place_of_death=='unknown' & final_outcome=='dead')
+print(paste("Percentage missing ", round(sum(is.na(place_of_death) | place_of_death=='unknown' & final_outcome=='dead')*100/length(which(final_outcome=='dead')),1), "%",sep=""))
+var_des$per[which(var_des$var =="place_of_death")] <- round(sum(is.na(place_of_death) | place_of_death=='unknown' & final_outcome=='dead')*100/length(which(final_outcome=='dead')),1)
+
+table(place_of_death, final_outcome)
+mismatches <- (!is.na(place_of_death) & final_outcome!='dead')
+
+table(place_of_death, outcome)
+mismatches <- mismatches | (!is.na(place_of_death) & outcome!='dead')
+
+table(place_of_death, current_status)
+mismatches <- mismatches | (!is.na(place_of_death) & current_status!='dead')
+
+if(any(mismatches)){
+  comment <- paste('some places of death recorded for cases not recorded as dead; see table', sep='')
+  DT::datatable(x[which(mismatches), c("mllid","place_of_death", "current_status", "final_outcome","outcome")]) 
+} else comment <- ""
+
+var_des$com[which(var_des$var =="place_of_death")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: epicasedef
+Var. def. : Status = confirmed/probable
+```{r epicasedef}
+mode(epicasedef)
+var_des$mod[which(var_des$var =="epicasedef")]  <- mode(epicasedef)
+var_des$na[which(var_des$var =="epicasedef")]  <- sum(is.na(epicasedef))
+print(paste("Percentage missing ", round(sum(is.na(epicasedef))*100/length(epicasedef),1), "%",sep=""))
+var_des$per[which(var_des$var =="epicasedef")] <- round(sum(is.na(epicasedef))*100/length(firstname),1)
+
+table(epicasedef, exclude= NULL)
+table(epicasedef, final_outcome, exclude= NULL)
+
+comment <- " None"
+var_des$com[which(var_des$var =="epicasedef")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: place_death_crude
+Var. def. : 
+```{r place_death_crude}
+mode(place_death_crude)
+var_des$mod[which(var_des$var =="place_death_crude")]  <- mode(place_death_crude)
+var_des$na[which(var_des$var =="place_death_crude")]  <- sum(is.na(place_death_crude) | place_death_crude=='unknown')
+print(paste("Percentage missing ", round(sum(is.na(place_death_crude) | place_death_crude=='unknown')*100/length(place_death_crude),1), "%",sep=""))
+var_des$per[which(var_des$var =="place_death_crude")] <- round(sum(is.na(place_death_crude) | place_death_crude=='unknown')*100/length(firstname),1)
+table(place_death_crude, exclude= NULL)
+
+table(place_death_crude, type_death,exclude = NULL)  # OK
+
+comment <- paste("Discuss potential reclassification with place_death_crude (",sum(place_death_crude=='unknown' & type_death=='alive'), " alive classified in unknown). Note that type_death: community contains both community ad commnunity-hcf. Perharps to be added to the caption of graphic using this variable.",sep="")
+
+var_des$com[which(var_des$var =="place_death_crude")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: community_death
+Var. def. : record of community death. Xls formula in the data entry sheet: # =IF(AND(Final_Outcome=""Died"",AND(Place_of_death<>""ETC"",Place_of_death<>""TC"",CTE_date="""")),1,0).
+```{r community_death}
+mode(community_death)
+var_des$mod[which(var_des$var =="community_death")]  <- mode(community_death)
+var_des$na[which(var_des$var =="community_death")]  <- sum(is.na(community_death))
+print(paste("Percentage missing ", round(sum(is.na(community_death))*100/length(community_death),1), "%",sep=""))
+var_des$per[which(var_des$var =="community_death")] <- round(sum(is.na(community_death))*100/length(community_death),1)
+
+table(community_death, place_of_death)
+DT::datatable(x[which(community_death == 0 & place_of_death =="hcf" ),  c("mllid","community_death", "place_of_death","statut","final_outcome","cte_date")])
+DT::datatable(x[which(community_death == 0 & place_of_death =="hospital" ),  c("mllid","community_death", "place_of_death","statut","final_outcome","cte_date")])
+
+comment <- paste("Category: 0 = no community death ; 1 = death in the community or at hospital (= any place outside of CT and CTE). Check: One probable in CTE/CT. Check classification: few cases with place of death outside CT/CTE which are not in the community death.", sep="")
+var_des$com[which(var_des$var =="community_death")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: type_death
+Var. def. : 
+```{r type_death}
+mode(type_death)
+var_des$mod[which(var_des$var =="type_death")]  <- mode(type_death)
+var_des$na[which(var_des$var =="type_death")]  <- sum(is.na(type_death) | type_death=='unknown')
+print(paste("Percentage missing ", round(sum(is.na(type_death) | type_death=='unknown')*100/length(type_death),1), "%",sep=""))
+var_des$per[which(var_des$var =="type_death")] <- round(sum(is.na(type_death) | type_death=='unknown')*100/length(firstname),1)
+
+table(type_death, exclude= NULL)
+table(place_death_crude, type_death,exclude = NULL)
+
+comment <- "Note that type_death: community contains both community ad commnunity-hcf. Perharps to be added to the caption of graphic using this variable."
+var_des$com[which(var_des$var =="type_death")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+## Comparison to other databases
+
+
+
+### Variable: vhf_code
+Var. def. : VHF data base code
+```{r vhf_code}
+str(vhf_code)
+vhf_code[1:50]
+
+var_des$mod[which(var_des$var =="vhf_code")]  <- mode(vhf_code)
+var_des$na[which(var_des$var =="vhf_code")]  <- sum(is.na(vhf_code))
+print(paste("Percentage missing ", round(sum(is.na(vhf_code))*100/length(vhf_code),1), "%",sep=""))
+var_des$per[which(var_des$var =="vhf_code")] <- round(sum(is.na(vhf_code))*100/length(vhf_code),1)
+
+comment <- paste("Number of VHF codes missing: ",sum(is.na(vhf_code)), "; number of VHF codes duplicated: ",
+                 sum(!is.na(vhf_code))-length(unique(vhf_code)), '; see table', sep="")
+duplicates <- names(which(table(vhf_code)>1))
+DT::datatable(x[which(x$vhf_code %in% duplicates), c("mllid","vhf_code", "firstname", "surname")]) 
+
+var_des$com[which(var_des$var =="vhf_code")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: patient_site_id
+Var. def. : Unique ID Line list CT/CTE
+```{r patient_site_id}
+mode(patient_site_id)
+var_des$mod[which(var_des$var =="patient_site_id")]  <- mode(patient_site_id)
+var_des$na[which(var_des$var =="patient_site_id")]  <- sum(is.na(patient_site_id))
+print(paste("Percentage missing ", round(sum(is.na(patient_site_id))*100/length(patient_site_id),1), "%",sep=""))
+var_des$per[which(var_des$var =="patient_site_id")] <- round(sum(is.na(patient_site_id))*100/length(patient_site_id),1)
+
+number_duplicates <- length(na.omit(patient_site_id)) - length(unique(patient_site_id))
+if(any(number_duplicates)) {
+  comment <- paste(number_duplicates, " site IDs are duplicates; check table; ", sep="")
+  
+  duplicates <- numeric()
+  for(id in na.omit(patient_site_id)) {
+     index <- which(patient_site_id==id)
+     if(length(index)>1) {
+        duplicates <- c(duplicates, index)
+  }}
+  
+  DT::datatable(x[duplicates, c("mllid", "patient_site_id", "vhf_code")]) 
+} else comment <- ""
+
+comment <- paste(comment, "check prior join with other datasets, notably CT/CTE", sep="")
+var_des$com[which(var_des$var =="outcome_vhf")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: reportdate_vhf
+Var. def. : report date in VHF
+```{r reportdate_vhf}
+mode(reportdate_vhf)
+var_des$mod[which(var_des$var =="reportdate_vhf")]  <- mode(reportdate_vhf)
+var_des$na[which(var_des$var =="reportdate_vhf")]  <- sum(is.na(reportdate_vhf))
+print(paste("Percent reportdate_vhf missing ", round(sum(is.na(reportdate_vhf))*100/length(reportdate_vhf),1), "%",sep=""))
+var_des$per[which(var_des$var =="reportdate_vhf")] <- round(sum(is.na(reportdate_vhf))*100/length(reportdate_vhf),1)
+var_des$min[which(var_des$var =="reportdate_vhf")] <- as.character(min(reportdate_vhf, na.rm=T))
+var_des$max[which(var_des$var =="reportdate_vhf")] <- as.character(max(reportdate_vhf, na.rm=T))
+
+differences <- reportdate_vhf - date_report
+comment <- paste(sum(differences > 0 | differences < 0, na.rm=T), ' cases have different report dates in VHF and MLL; ', sum((is.na(date_report) & !is.na(reportdate_vhf)) | (!is.na(date_report) & is.na(reportdate_vhf))), ' cases have report dates listed in one (but not both) VHF and MLL', sep='')
+
+var_des$com[which(var_des$var =="reportdate_vhf")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: datedeath_vhf
+Var. def. : Date of death VHF
+```{r datedeath_vhf}
+mode(datedeath_vhf)
+summary(datedeath_vhf)
+var_des$mod[which(var_des$var =="datedeath_vhf")]  <- mode(datedeath_vhf)
+var_des$na[which(var_des$var =="datedeath_vhf")]  <- sum(is.na(datedeath_vhf))
+print(paste("Percentage missing ", round(sum(is.na(datedeath_vhf))*100/length(datedeath_vhf),1), "%",sep=""))
+var_des$per[which(var_des$var =="datedeath_vhf")] <- round(sum(is.na(datedeath_vhf))*100/length(datedeath_vhf),1)
+var_des$min[which(var_des$var =="datedeath_vhf")] <- as.character(min(datedeath_vhf, na.rm=TRUE))
+var_des$max[which(var_des$var =="datedeath_vhf")] <- as.character(max(datedeath_vhf, na.rm=TRUE))
+
+differences <- as.numeric(date_death - datedeath_vhf)
+summary(differences)
+if(any(differences < 0 | differences > 3)){
+  DT::datatable(x[which(differences < 0 | differences > 3), c("mllid", "date_death" , "datedeath_vhf")]) 
+  comment <- "Some outliers with a signiciant difference between date_death and datedeath_vhf"
+} else comment <- ''
+
+var_des$com[which(var_des$var =="datedeath_vhf")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: outcome_vhf
+Var. def. : Outcome based on VHF
+```{r outcome_vhf}
+mode(outcome_vhf)
+var_des$mod[which(var_des$var =="outcome_vhf")]  <- mode(outcome_vhf)
+var_des$na[which(var_des$var =="outcome_vhf")]  <- sum(is.na(outcome_vhf) | outcome_vhf %in% c('unknown', 'uknown'))
+print(paste("Percentage missing ", round(sum(is.na(outcome_vhf) | outcome_vhf %in% c('unknown', 'uknown'))*100/length(outcome_vhf),1), "%",sep=""))
+var_des$per[which(var_des$var =="outcome_vhf")] <- round(sum(is.na(outcome_vhf) | outcome_vhf %in% c('unknown', 'uknown'))*100/length(outcome_vhf),1)
+
+mismatches <- outcome_vhf %in% c('gueri', 'vivant') & final_outcome=='dead'
+mismatches <- mismatches | ((outcome_vhf=='uknown' | outcome_vhf=='unknown' | is.na(outcome_vhf)) & (final_outcome != 'unknown' | !is.na(final_outcome)))
+mismatches <- mismatches | (outcome_vhf=='decede' & final_outcome=='alive')
+mismatches <- mismatches | outcome_vhf %in% c('gueri', 'vivant') & outcome=='dead'
+mismatches <- mismatches | ((outcome_vhf=='uknown' | outcome_vhf=='unknown' | is.na(outcome_vhf)) & (outcome != 'unknown' | !is.na(outcome)))
+mismatches <- mismatches | (outcome_vhf=='decede' & outcome=='recovered')
+
+if(any(mismatches)){
+  comment <- paste(sum(mismatches), ' discrepancies between outcome_vhf and outcome/final_outcome; check table')
+  DT::datatable(x[which(differences < 0 | differences > 3), c("mllid", "outcome_vhf", "outcome" , "final_outcome", 'current_status')]) 
+}
+
+var_des$com[which(var_des$var =="outcome_vhf")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: reportdate_cnc
+Var. def. : report date at coordination meeting
+```{r reportdate_cnc}
+var_des$mod[which(var_des$var =="reportdate_cnc")]  <- mode(reportdate_cnc)
+var_des$na[which(var_des$var =="reportdate_cnc")]  <- sum(is.na(reportdate_cnc))
+print(paste("Percent reportdate_cnc missing ", round(sum(is.na(reportdate_cnc))*100/length(reportdate_cnc),1), "%",sep=""))
+var_des$per[which(var_des$var =="reportdate_cnc")] <- round(sum(is.na(reportdate_cnc))*100/length(reportdate_cnc),1)
+var_des$min[which(var_des$var =="reportdate_cnc")] <- as.character(min(reportdate_cnc, na.rm=TRUE))
+var_des$max[which(var_des$var =="reportdate_cnc")] <- as.character(max(reportdate_cnc, na.rm=TRUE))
+
+
+differences <- reportdate_cnc - date_report
+comment <- paste(sum(differences > 0 | differences < 0, na.rm=T), ' cases have different report dates in CNC and MLL; ', sum((is.na(date_report) & !is.na(reportdate_cnc)) | (!is.na(date_report) & is.na(reportdate_cnc))), ' cases have report dates listed in one (but not both) CNC and MLL', sep='')
+
+var_des$com[which(var_des$var =="reportdate_cnc")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable:date of onset form database CNC
+Var. def. : 
+```{r onset_cnc}
+var_des$mod[which(var_des$var =="onset_cnc")]  <- mode(onset_cnc)
+var_des$na[which(var_des$var =="onset_cnc")]  <- sum(is.na(onset_cnc))
+print(paste("Percent onset_cnc missing ", round(sum(is.na(onset_cnc))*100/length(onset_cnc),1), "%",sep=""))
+var_des$per[which(var_des$var =="onset_cnc")] <- round(sum(is.na(onset_cnc))*100/length(onset_cnc),1)
+var_des$min[which(var_des$var =="onset_cnc")] <- as.character(min(onset_cnc, na.rm=T))
+var_des$max[which(var_des$var =="onset_cnc")] <- as.character(max(onset_cnc, na.rm=T))
+
+differences <- onset_cnc - date_onset
+comment <- paste(sum(differences > 0 | differences < 0, na.rm=T), ' cases have different onset dates in CNC and MLL; ', sum((is.na(date_onset) & !is.na(onset_cnc)) | (!is.na(date_onset) & is.na(onset_cnc))), ' cases have onset dates listed in one (but not both) CNC and MLL', sep='')
+
+var_des$com[which(var_des$var =="onset_cnc")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable:date of onset form database VHF
+Var. def. : 
+```{r onset_vhf}
+mode(onset_vhf)
+str(onset_vhf)
+var_des$mod[which(var_des$var =="onset_vhf")]  <- mode(onset_vhf)
+var_des$na[which(var_des$var =="onset_vhf")]  <- sum(is.na(onset_vhf))
+print(paste("Percent onset_vhf missing ", round(sum(is.na(onset_vhf))*100/length(onset_vhf),1), "%",sep=""))
+var_des$per[which(var_des$var =="onset_vhf")] <- round(sum(is.na(onset_vhf))*100/length(onset_vhf),1)
+var_des$min[which(var_des$var =="onset_vhf")] <- as.character(min(onset_vhf, na.rm=T))
+var_des$max[which(var_des$var =="onset_vhf")] <- as.character(max(onset_vhf, na.rm=T))
+
+differences <- onset_vhf - date_onset
+comment <- paste(sum(differences > 0 | differences < 0, na.rm=T), ' cases have different onset dates in VHF and MLL; ', sum((is.na(date_onset) & !is.na(onset_vhf)) | (!is.na(date_onset) & is.na(onset_vhf))), ' cases have onset dates listed in one (but not both) VHF and MLL', sep='')
+
+var_des$com[which(var_des$var =="onset_vhf")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+### Variable: zs_cnc, zs_vhf, and zs_calc
+Var. def. :  It corresponds to the health zone where the case has been reported based on the narrative.
+```{r zs_cnc}
+var_des$mod[which(var_des$var =="zs_cnc")]  <- mode(zs_cnc)
+var_des$na[which(var_des$var =="zs_cnc")]  <- sum(is.na(zs_cnc))
+print(paste("Percentage missing ", round(sum(is.na(zs_cnc))*100/length(zs_cnc),1), "%",sep=""))
+var_des$per[which(var_des$var =="zs_cnc")] <- round(sum(is.na(zs_cnc))*100/length(zs_cnc),1)
+
+var_des$mod[which(var_des$var =="zs_vhf")]  <- mode(zs_vhf)
+var_des$na[which(var_des$var =="zs_vhf")]  <- sum(is.na(zs_vhf))
+print(paste("Percentage missing ", round(sum(is.na(zs_vhf))*100/length(zs_vhf),1), "%",sep=""))
+var_des$per[which(var_des$var =="zs_vhf")] <- round(sum(is.na(zs_vhf))*100/length(zs_vhf),1)
+
+var_des$mod[which(var_des$var =="zs_calc")]  <- mode(zs_calc)
+var_des$na[which(var_des$var =="zs_calc")]  <- sum(is.na(zs_calc))
+print(paste("Percentage missing ", round(sum(is.na(zs_calc))*100/length(zs_calc),1), "%",sep=""))
+var_des$per[which(var_des$var =="zs_calc")] <- round(sum(is.na(zs_calc))*100/length(zs_calc),1)
+
+mismatches <- (is.na(zs_cnc) & (!is.na(zs_vhf) | !is.na(zone_de_sante) | !is.na(zs_calc)))
+mismatches <- mismatches | (is.na(zs_vhf) & (!is.na(zs_cnc) | !is.na(zone_de_sante) | !is.na(zs_calc)))
+mismatches <- mismatches | (is.na(zone_de_sante) & (!is.na(zs_cnc) | !is.na(zs_vhf) | !is.na(zs_calc)))
+mismatches <- mismatches | (is.na(zs_calc) & (!is.na(zs_cnc) | !is.na(zs_vhf) | !is.na(zone_de_sante)))
+
+if(any(mismatches)){
+  comment <- "some zones de sante are available in one (but not all) databases; see table"
+  DT::datatable(x[which(mismatches), c("mllid","zs_cnc","zs_vhf","zs_calc", "zone_de_sante")])
+} else comment <- ''
+
+
+var_des$com[which(var_des$var =="zs_cnc")] <- comment
+var_des$com[which(var_des$var =="zs_vhf")] <- comment
+var_des$com[which(var_des$var =="zs_calc")] <- comment
+```
+
+
+
+
+## Other
+
+### Variable: writeupsource
+Var. def. : Narrative source
+```{r writeupsource}
+mode(writeupsource)
+var_des$mod[which(var_des$var =="writeupsource")]  <- mode(writeupsource)
+var_des$na[which(var_des$var =="writeupsource")]  <- sum(is.na(writeupsource) & !is.na(narratives))
+print(paste("Percentage missing: ", round(sum(is.na(writeupsource) & !is.na(narratives))*100/length(which(!is.na(narratives))),1), "%",sep=""))
+var_des$per[which(var_des$var =="writeupsource")] <- round(sum(is.na(writeupsource) & !is.na(narratives))*100/length(which(!is.na(narratives))),1)
+
+comment <- paste(round(sum(is.na(writeupsource) & !is.na(narratives))*100/length(which(!is.na(narratives))),1),"% missing; check cross tables; reclassifcaion possible?", sep="")
+var_des$com[which(var_des$var =="writeupsource")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable: notes
+Var. def. : Open field for investigation findings
+```{r notes}
+var_des$mod[which(var_des$var =="notes")]  <- mode(notes)
+var_des$na[which(var_des$var =="notes")]  <- sum(is.na(notes))
+print(paste("Percentage missing ", round(sum(is.na(notes))*100/length(notes),1), "%",sep=""))
+var_des$per[which(var_des$var =="notes")] <- round(sum(is.na(notes))*100/length(notes),1)
+
+comment <- paste("Check reclassification possible", sep="")
+var_des$com[which(var_des$var =="notes")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+### Variable:narratives
+Var. def. : Open field for investigation findings
+```{r narratives}
+var_des$mod[which(var_des$var =="narratives")]  <- mode(narratives)
+var_des$na[which(var_des$var =="narratives")]  <- sum(is.na(narratives))
+print(paste("Percentage missing ", round(sum(is.na(narratives))*100/length(narratives),1), "%",sep=""))
+var_des$per[which(var_des$var =="narratives")] <- round(sum(is.na(narratives))*100/length(narratives),1)
+
+comment <- paste("Check cross tables. reclassifcation possible", sep="")
+var_des$com[which(var_des$var =="narratives")] <- comment
+```
+```{r comment="//", results="asis", echo=FALSE}
+cat(paste("<b>", comment, "</b>", sep=""))
+```
+
+
+
+##  OVERVIEW
+Summary table
+```{r final table}
+
+colnames(var_des) <- c("var_names","mode","Num_NA", "Percent_NA", "Minimum", "Maxmum","Comment")
+DT::datatable(var_des, options = list(lengthMenu = c(50,100,dim(var_des)[1])))
+```
+
+<!-- ======================================================= --> 
+<!-- ======================================================= --> 
+<!-- ======================================================= --> 
+<!-- # Export tables {.tabset .tabset-fade .tabset-pills} -->
+
+
+<!-- <!-- ======================================================= -->
+<!-- ## Outline -->
+
+<!-- Provide an outline of exported files. -->
+
+
+
+<!-- ======================================================= -->
+<!-- ## Excel files -->
+
+<!-- The following code exports all tables named in `to_report` to `xslx` files, -->
+<!-- stored inside the folder `produced_xlsx`: -->
+
+<!-- ```{r xlsx_exports, eval = FALSE} -->
+
+<!-- if (!dir.exists("produced_xlsx")) { -->
+<!--   dir.create("produced_xlsx") -->
+<!-- } -->
+
+<!-- to_export <- c("table_overall", -->
+<!--                "table_sub_coordination") -->
+
+<!-- for (e in to_export) { -->
+<!--   rio::export(get(e), -->
+<!--               file.path("produced_xlsx", -->
+<!--                         paste0(e, ".xlsx"))) -->
+<!-- } -->
+
+<!-- ``` -->
+
+<!-- Click on the following links to open the files (only works if the files above -->
+<!-- have been generated and are in the same folder as this document): -->
+
+
+<!-- ```{r xlsx_links, results = "asis", eval = FALSE} -->
+
+<!-- for (e in to_export) { -->
+<!--   txt <- sprintf("- [%s.xlsx](%s.xlsx)", -->
+<!--                  e, -->
+<!--                  file.path("produced_xlsx", -->
+<!--                            e)) -->
+<!--   cat(txt, sep = "\n") -->
+<!-- } -->
+
+<!-- ``` -->
+
+
+
+<!-- ======================================================= -->
+<!-- ## R objects -->
+
+<!-- The following code exports all tables named in `to_report` to `rds` files, -->
+<!-- stored inside the folder `produced_rds`: -->
+
+<!-- ```{r rds_exports, eval = FALSE} -->
+
+<!-- if (!dir.exists("produced_rds")) { -->
+<!--   dir.create("produced_rds") -->
+<!-- } -->
+
+<!-- to_export <- c("table_overall", -->
+<!--                "table_sub_coordination") -->
+
+<!-- for (e in to_export) { -->
+<!--   rio::export(get(e), -->
+<!--               file.path("produced_rds", -->
+<!--                         paste0(e, ".rds"))) -->
+<!-- } -->
+
+<!-- ``` -->
+
+<!-- Click on the following links to open the files (only works if the files above -->
+<!-- have been generated and are in the same folder as this document): -->
+
+
+<!-- ```{r rds_links, results = "asis", eval = FALSE} -->
+
+<!-- for (e in to_export) { -->
+<!--   txt <- sprintf("- [%s.rds](%s.rds)", -->
+<!--                  e, -->
+<!--                  file.path("produced_rds", -->
+<!--                            e)) -->
+<!--   cat(txt, sep = "\n") -->
+<!-- } -->
+
+<!-- ``` -->
+
+
+
+
+
+
+
+
+
+<!-- ======================================================= --> 
+<!-- ======================================================= -->
+<!-- ======================================================= -->
+<!-- # System information {.tabset .tabset-fade .tabset-pills} -->
+
+<!-- ===================================================== -->
+<!-- ## Outline -->
+
+<!-- The following information documents the system on which the document was -->
+<!-- compiled. -->
+
+
+
+<!-- ===================================================== -->
+<!-- ## System  -->
+
+<!-- This provides information on the operating system. -->
+
+<!-- ```{r system_info} -->
+<!-- Sys.info() -->
+<!-- ``` -->
+
+
+
+<!-- ===================================================== -->
+<!-- ## R environment -->
+
+<!-- This provides information on the version of R used: -->
+
+<!-- ```{r R_session} -->
+<!-- R.version -->
+<!-- ``` -->
+
+
+
+<!-- ===================================================== -->
+<!-- ## R packages -->
+
+<!-- This provides information on the packages used: -->
+
+<!-- ```{r R_pkg} -->
+<!-- sessionInfo() -->
+<!-- ``` -->
+
+
+<!-- ===================================================== -->
+<!-- ## Compilation parameters -->
+
+<!-- This shows which parameters were passed through `params` at compilation time: -->
+
+<!-- ```{r params} -->
+<!-- params -->
+<!-- ``` -->
+
+
+
+<!-- ===================================================== -->
+<!-- ## Change log -->
+
+<!-- ### Version 1.0.0 -->
+
